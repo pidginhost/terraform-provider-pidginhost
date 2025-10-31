@@ -349,16 +349,17 @@ Enable verbose logs with `TF_LOG=TRACE ./terraform.sh apply` when debugging prov
 
 ## Releasing
 
-1. Export a GPG key fingerprint that is trusted by GitHub releases (Settings → SSH and GPG keys) under `GPG_FINGERPRINT=<fingerprint>`.
-2. Tag the release with a semantic version prefixed with `v` (for example `v1.0.0`), push the tag, and ensure the default branch contains the changelog entry.
-3. Run the cross-platform build and publishing pipeline:
+1. Ensure `GITHUB_TOKEN` is exported with at least `repo` scope (for example `export GITHUB_TOKEN=$(gh auth token)` after `gh auth login`).
+2. Export a GPG key fingerprint that is trusted by GitHub releases (Settings → SSH and GPG keys) under `GPG_FINGERPRINT=<fingerprint>`.
+3. Tag the release with a semantic version prefixed with `v` (for example `v1.0.0`), push the tag, and ensure the default branch contains the changelog entry.
+4. Run the cross-platform build and publishing pipeline:
 
    ```bash
    goreleaser release --clean
    ```
 
    The command produces platform-specific archives named `terraform-provider-pidginhost_<VERSION>_<OS>_<ARCH>.zip`, plus `SHA256SUMS` and `SHA256SUMS.sig`, and uploads them to the corresponding GitHub release draft.
-4. Publish the GitHub release, then register the repository under the Terraform Registry UI (`registry.terraform.io`) using the same GitHub organization and repository.
+5. Publish the GitHub release, then register the repository under the Terraform Registry UI (`registry.terraform.io`) using the same GitHub organization and repository.
 
 ---
 

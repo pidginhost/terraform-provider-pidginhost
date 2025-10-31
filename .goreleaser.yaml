@@ -39,7 +39,6 @@ signs:
     args:
       - --batch
       - --yes
-      - --armor
       - --local-user
       - "{{ .Env.GPG_FINGERPRINT }}"
       - --output
