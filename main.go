@@ -1,12 +1,12 @@
 package main
 
 import (
-    "context"
-    "flag"
-    "log"
+	"context"
+	"flag"
+	"log"
 
-    "github.com/hashicorp/terraform-plugin-framework/providerserver"
-    pidginhost "github.com/pidginhost/terraform-provider-pidginhost/internal/provider"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	pidginhost "github.com/pidginhost/terraform-provider-pidginhost/internal/provider"
 )
 
 var (
@@ -17,11 +17,13 @@ var (
 func main() {
 	flag.Parse()
 
-    opts := providerserver.ServeOpts{
-        Address: "registry.terraform.io/pidginhost/pidginhost",
-    }
+	pidginhost.SetVersion(version)
 
-    err := providerserver.Serve(context.Background(), pidginhost.New, opts)
+	opts := providerserver.ServeOpts{
+		Address: "registry.terraform.io/pidginhost/pidginhost",
+	}
+
+	err := providerserver.Serve(context.Background(), pidginhost.New, opts)
 	if err != nil {
 		log.Fatalf("Error serving PidginHost provider: %s", err)
 	}

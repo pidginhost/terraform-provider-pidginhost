@@ -17,3 +17,5 @@ terraform.tfstate*
 # Temporary files
 *.tmp
 *.log
+# Added by goreleaser init:
+dist/

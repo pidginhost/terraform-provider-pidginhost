@@ -12,7 +12,20 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-var _ provider.Provider = &pidginhostProvider{}
+var (
+	_ provider.Provider = &pidginhostProvider{}
+
+	providerVersion = "dev"
+)
+
+// SetVersion updates the provider version reported via metadata. This should
+// be called by binaries embedding the provider before serving.
+func SetVersion(v string) {
+	if v == "" {
+		return
+	}
+	providerVersion = v
+}
 
 func New() provider.Provider {
 	return &pidginhostProvider{}
@@ -31,6 +44,7 @@ type Client struct {
 
 func (p *pidginhostProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "pidginhost"
+	resp.Version = providerVersion
 }
 
 func (p *pidginhostProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {

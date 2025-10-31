@@ -1,0 +1,63 @@
+version: 2
+
+project_name: terraform-provider-pidginhost
+
+builds:
+  - id: terraform-provider-pidginhost
+    main: .
+    binary: terraform-provider-pidginhost_v{{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: terraform-provider-pidginhost
+    ids:
+      - terraform-provider-pidginhost
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+
+signs:
+  - id: checksum
+    cmd: gpg
+    args:
+      - --batch
+      - --yes
+      - --armor
+      - --local-user
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    artifacts: checksum
+    signature: "${artifact}.sig"
+
+release:
+  github:
+    owner: pidginhost
+    name: terraform-provider-pidginhost
+  draft: true
+
+changelog:
+  sort: desc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
