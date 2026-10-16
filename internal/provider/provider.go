@@ -103,6 +103,7 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 		NewVolumeResource,
 		NewFirewallResource,
 		NewPublicIPResource,
+		NewFloatingIPResource,
 	}
 }
 
