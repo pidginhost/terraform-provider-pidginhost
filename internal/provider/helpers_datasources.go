@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -36,6 +39,23 @@ func listAll[T any, P listPage[T]](fetch func(page int32) (P, *http.Response, er
 		items = []T{}
 	}
 	return items, err
+}
+
+// onlyMatch returns the single item in matches. It fails when there is none,
+// or when there are several, naming their ids so the user can pick one.
+func onlyMatch[T any](matches []T, id func(T) int32, kind, query string) (T, error) {
+	var zero T
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return zero, fmt.Errorf("no %s matches %s", kind, query)
+	}
+	ids := make([]string, len(matches))
+	for i, m := range matches {
+		ids[i] = strconv.Itoa(int(id(m)))
+	}
+	return zero, fmt.Errorf("%d %ss match %s (ids %s); look it up by id instead", len(matches), kind, query, strings.Join(ids, ", "))
 }
 
 func computedString(description string) schema.StringAttribute {
