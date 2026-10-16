@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
@@ -23,5 +24,11 @@ func TestKubernetesSchemasAreValid(t *testing.T) {
 		if resp.Diagnostics.HasError() {
 			t.Errorf("%T: %v", newResource(), resp.Diagnostics)
 		}
+	}
+	var resp datasource.SchemaResponse
+	NewKubernetesKubeconfigDataSource().Schema(ctx, datasource.SchemaRequest{}, &resp)
+	resp.Diagnostics.Append(resp.Schema.ValidateImplementation(ctx)...)
+	if resp.Diagnostics.HasError() {
+		t.Errorf("kubeconfig data source: %v", resp.Diagnostics)
 	}
 }

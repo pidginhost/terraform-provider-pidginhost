@@ -109,7 +109,9 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 }
 
 func (p *pidginhostProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewKubernetesKubeconfigDataSource,
+	}
 }
 
 // clientFrom unpacks the provider data handed to a resource or data source.
