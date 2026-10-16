@@ -1,0 +1,20 @@
+---
+page_title: "Provider: PidginHost"
+description: |-
+  Manage PidginHost cloud servers, storage, networking, DNS and Kubernetes.
+---
+
+# PidginHost Provider
+
+Manage [PidginHost](https://www.pidginhost.com) cloud servers, volumes, firewalls, public and floating
+addresses, private networks, object storage buckets, snapshots and Kubernetes clusters.
+
+Create an API token in the PidginHost panel and pass it as `token`, or export it as `PIDGINHOST_TOKEN`.
+
+## Example Usage
+
+{{ tffile "examples/provider/provider.tf" }}
+
+Upgrading from 0.1? Read the [0.2 upgrade guide](guides/upgrading-to-0.2).
+
+{{ .SchemaMarkdown | trimspace }}
