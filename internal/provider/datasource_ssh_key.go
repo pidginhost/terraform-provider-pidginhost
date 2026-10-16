@@ -63,9 +63,7 @@ func (d *sshKeyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	keys, err := listAll(func(page int32) (*pidginhost.PaginatedSSHKeyList, *http.Response, error) {
-		return d.client.AccountAPI.AccountSshKeysList(ctx).Page(page).Execute()
-	})
+	keys, err := listSSHKeys(ctx, d.client)
 	if err != nil {
 		resp.Diagnostics.Append(apiError("Listing SSH keys", err))
 		return
@@ -103,4 +101,10 @@ func findSSHKey(keys []pidginhost.SSHKey, attribute, value string) (pidginhost.S
 		}
 	}
 	return onlyMatch(matches, func(k pidginhost.SSHKey) int32 { return k.Id }, "SSH key", fmt.Sprintf("%s %q", attribute, value))
+}
+
+func listSSHKeys(ctx context.Context, client *pidginhost.APIClient) ([]pidginhost.SSHKey, error) {
+	return listAll(func(page int32) (*pidginhost.PaginatedSSHKeyList, *http.Response, error) {
+		return client.AccountAPI.AccountSshKeysList(ctx).Page(page).Execute()
+	})
 }

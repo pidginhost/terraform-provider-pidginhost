@@ -112,6 +112,7 @@ func (p *pidginhostProvider) DataSources(_ context.Context) []func() datasource.
 		NewKubernetesClusterTypesDataSource,
 		NewSSHKeyDataSource,
 		NewServerDataSource,
+		NewCatalogDataSource,
 	}
 }
 

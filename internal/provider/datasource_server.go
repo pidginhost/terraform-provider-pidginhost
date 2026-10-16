@@ -106,9 +106,7 @@ func (d *serverDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	query := fmt.Sprintf("id %q", idValue.ValueString())
 	if idValue.IsNull() {
 		query = fmt.Sprintf("hostname %q", hostname.ValueString())
-		servers, err := listAll(func(page int32) (*pidginhost.PaginatedServerList, *http.Response, error) {
-			return d.client.CloudAPI.CloudServersList(ctx).Page(page).Execute()
-		})
+		servers, err := listServers(ctx, d.client)
 		if err != nil {
 			resp.Diagnostics.Append(apiError("Listing servers", err))
 			return
@@ -174,4 +172,10 @@ func findServerByHostname(servers []pidginhost.Server, hostname string) (int32, 
 
 func serverIsGone(status pidginhost.ResourceStatusEnum) bool {
 	return status == pidginhost.RESOURCESTATUSENUM_CANCELLED || status == pidginhost.RESOURCESTATUSENUM_TERMINATED
+}
+
+func listServers(ctx context.Context, client *pidginhost.APIClient) ([]pidginhost.Server, error) {
+	return listAll(func(page int32) (*pidginhost.PaginatedServerList, *http.Response, error) {
+		return client.CloudAPI.CloudServersList(ctx).Page(page).Execute()
+	})
 }
