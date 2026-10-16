@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -256,11 +259,39 @@ func (r *firewallResource) applyRules(ctx context.Context, set *pidginhost.Firew
 			return nil, err
 		}
 	}
-	if len(del)+len(patch)+len(create) == 0 {
+	if len(del)+len(patch)+len(create) == 0 && set.Status != pidginhost.FIREWALLRULESSETSTATUSENUM_PENDING {
 		return set, nil
 	}
-	set, _, err := r.client.CloudAPI.CloudFirewallRulesSetRetrieve(ctx, set.Id).Execute()
-	return set, err
+	return r.waitValidated(ctx, set.Id)
+}
+
+// waitValidated waits while the API validates a rule set, which it does in
+// the background after every change, and fails when it rejects a rule.
+func (r *firewallResource) waitValidated(ctx context.Context, id int32) (*pidginhost.FirewallRulesSet, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	var set *pidginhost.FirewallRulesSet
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
+		got, _, err := r.client.CloudAPI.CloudFirewallRulesSetRetrieve(ctx, id).Execute()
+		if err != nil {
+			return false, err
+		}
+		set = got
+		return got.Status != pidginhost.FIREWALLRULESSETSTATUSENUM_PENDING, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if set.Status == pidginhost.FIREWALLRULESSETSTATUSENUM_INVALID {
+		var problems []string
+		for _, rule := range set.Rules {
+			if rule.HasError {
+				problems = append(problems, fmt.Sprintf("rule %d: %s", rule.Id, rule.ErrorMessage))
+			}
+		}
+		return set, fmt.Errorf("the API rejected the rule set: %s", strings.Join(problems, "; "))
+	}
+	return set, nil
 }
 
 type firewallRulePatch struct {
