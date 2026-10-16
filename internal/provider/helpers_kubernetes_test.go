@@ -13,6 +13,7 @@ func TestKubernetesSchemasAreValid(t *testing.T) {
 	for _, newResource := range []func() fwresource.Resource{
 		NewKubernetesClusterResource,
 		NewKubernetesRouteResource,
+		NewKubernetesPortForwardResource,
 	} {
 		var resp fwresource.SchemaResponse
 		newResource().Schema(ctx, fwresource.SchemaRequest{}, &resp)
