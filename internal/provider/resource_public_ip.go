@@ -335,14 +335,28 @@ func (r *publicIPResource) bind(ctx context.Context, version int64, ip *pidginho
 		if err != nil {
 			return false, err
 		}
-		return res.RebootRequired && !res.Rebooted, nil
+		return res.RebootRequired && !res.Rebooted, r.waitAttached(ctx, version, ip.Id)
 	}
 	body := pidginhost.AttachIPv4Request{Ipv4: ip.Address, Reboot: &reboot}
 	res, _, err := r.client.CloudAPI.CloudServersAttachIpv4Create(ctx, serverID).AttachIPv4Request(body).Execute()
 	if err != nil {
 		return false, err
 	}
-	return res.RebootRequired && !res.Rebooted, nil
+	return res.RebootRequired && !res.Rebooted, r.waitAttached(ctx, version, ip.Id)
+}
+
+// waitAttached waits until the network change behind an attach is applied.
+// Applying it resets the PTR to the server hostname, so a reverse_dns set
+// before then would be overwritten.
+func (r *publicIPResource) waitAttached(ctx context.Context, version int64, id int32) error {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
+		got, _, err := r.get(ctx, version, id)
+		return err == nil && got.Attached, err
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for the attach to apply: %w", err)
+	}
+	return nil
 }
 
 func (r *publicIPResource) waitDetached(ctx context.Context, version int64, id int32) error {
