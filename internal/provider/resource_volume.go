@@ -113,7 +113,7 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := pidginhost.NewVolumeRequest(int32(plan.Size.ValueInt64()), plan.Product.ValueString())
+	body := pidginhost.NewVolumeRequest(plan.Size.ValueInt64(), plan.Product.ValueString())
 	body.Alias = optionalString(plan.Alias)
 	body.Project = optionalString(plan.Project)
 	v, _, err := r.client.CloudAPI.CloudServersVolumesCreate(ctx, plan.ServerID.ValueString()).VolumeRequest(*body).Execute()
@@ -173,7 +173,7 @@ func (r *volumeResource) Update(ctx context.Context, req resource.UpdateRequest,
 		body.Alias = optionalString(plan.Alias)
 	}
 	if !plan.Size.Equal(state.Size) {
-		body.Size = optionalInt32(plan.Size)
+		body.Size = optionalInt64(plan.Size)
 	}
 	if !plan.Project.Equal(state.Project) {
 		body.Project = optionalString(plan.Project)

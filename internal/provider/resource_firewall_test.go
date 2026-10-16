@@ -68,14 +68,14 @@ resource "pidginhost_firewall" "test" {
 `, name, list)
 }
 
-func apiRule(id int32, dport string, enabled bool, position int32) pidginhost.FirewallRule {
+func apiRule(id int32, dport string, enabled bool, position int64) pidginhost.FirewallRule {
 	return pidginhost.FirewallRule{
 		Id: id, Direction: "in", Action: "ACCEPT", Protocol: pidginhost.PtrString("tcp"), Source: pidginhost.PtrString(""),
 		Dport: pidginhost.PtrString(dport), Enabled: &enabled, Position: &position,
 	}
 }
 
-func wantRule(dport string, enabled *bool, position *int32) pidginhost.FirewallRuleRequest {
+func wantRule(dport string, enabled *bool, position *int64) pidginhost.FirewallRuleRequest {
 	return pidginhost.FirewallRuleRequest{
 		Direction: "in", Action: "ACCEPT", Protocol: pidginhost.PtrString("tcp"), Dport: pidginhost.PtrString(dport),
 		Enabled: enabled, Position: position,
@@ -90,9 +90,9 @@ func TestDiffFirewallRules(t *testing.T) {
 		apiRule(4, "443", true, 40),
 	}
 	desired := []pidginhost.FirewallRuleRequest{
-		wantRule("22", pidginhost.PtrBool(true), pidginhost.PtrInt32(10)), // unchanged
+		wantRule("22", pidginhost.PtrBool(true), pidginhost.PtrInt64(10)), // unchanged
 		wantRule("443", pidginhost.PtrBool(false), nil),                   // first 443 rule, disabled
-		wantRule("443", pidginhost.PtrBool(true), pidginhost.PtrInt32(5)), // second 443 rule, moved
+		wantRule("443", pidginhost.PtrBool(true), pidginhost.PtrInt64(5)), // second 443 rule, moved
 		wantRule("8080", pidginhost.PtrBool(true), nil),                   // new
 	}
 	del, patch, create := diffFirewallRules(existing, desired)

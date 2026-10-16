@@ -55,7 +55,7 @@ type lbRule struct {
 	Direction, Action, Protocol, Source, Sport, Destination, Dport string
 	Comment                                                        string
 	Enabled                                                        bool
-	Position                                                       int32
+	Position                                                       int64
 }
 
 // key is what identifies a rule; comment, enabled and position change in place.
@@ -364,7 +364,7 @@ func (m *kubernetesLBFirewallModel) rules() []lbRule {
 			Direction: r.Direction.ValueString(), Action: r.Action.ValueString(),
 			Protocol: r.Protocol.ValueString(), Source: r.Source.ValueString(), Sport: r.Sport.ValueString(),
 			Destination: r.Destination.ValueString(), Dport: r.Dport.ValueString(), Comment: r.Comment.ValueString(),
-			Enabled: r.Enabled.ValueBool(), Position: int32(r.Position.ValueInt64()),
+			Enabled: r.Enabled.ValueBool(), Position: r.Position.ValueInt64(),
 		}
 	}
 	return rules
