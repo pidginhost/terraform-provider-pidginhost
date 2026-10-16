@@ -15,6 +15,7 @@ func TestKubernetesSchemasAreValid(t *testing.T) {
 		NewKubernetesRouteResource,
 		NewKubernetesPortForwardResource,
 		NewKubernetesLBFirewallResource,
+		NewKubernetesClusterServerResource,
 	} {
 		var resp fwresource.SchemaResponse
 		newResource().Schema(ctx, fwresource.SchemaRequest{}, &resp)
