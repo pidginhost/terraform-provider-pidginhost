@@ -86,12 +86,12 @@ func (r *kubernetesLBFirewallResource) Schema(_ context.Context, _ resource.Sche
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"cluster_id": clusterIDAttribute(),
-		},
-		Blocks: map[string]schema.Block{
-			"rule": schema.ListNestedBlock{
-				Description: "A firewall rule. Rules match existing ones on direction, action, protocol, addresses " +
-					"and ports; comment, enabled and position change in place.",
-				NestedObject: schema.NestedBlockObject{
+			"rule": schema.ListNestedAttribute{
+				Optional: true,
+				Description: "Rules of the load balancer. The list is authoritative: rules the load balancer has but " +
+					"the list does not are deleted. Rules match existing ones on direction, action, protocol, " +
+					"addresses and ports; comment, enabled and position change in place.",
+				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"direction": schema.StringAttribute{
 							Required:    true,

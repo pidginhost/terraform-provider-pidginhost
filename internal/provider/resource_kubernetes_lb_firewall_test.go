@@ -50,22 +50,23 @@ func testAccKubernetesLBFirewallConfig(clusterID, comment string) string {
 resource "pidginhost_kubernetes_lb_firewall" "test" {
   cluster_id = %q
 
-  rule {
-    direction = "in"
-    action    = "ACCEPT"
-    protocol  = "tcp"
-    source    = "192.0.2.0/24"
-    dport     = "8443"
-    comment   = %q
-  }
-
-  rule {
-    direction = "in"
-    action    = "DROP"
-    protocol  = "tcp"
-    dport     = "8443"
-    position  = 200
-  }
+  rule = [
+    {
+      direction = "in"
+      action    = "ACCEPT"
+      protocol  = "tcp"
+      source    = "192.0.2.0/24"
+      dport     = "8443"
+      comment   = %q
+    },
+    {
+      direction = "in"
+      action    = "DROP"
+      protocol  = "tcp"
+      dport     = "8443"
+      position  = 200
+    },
+  ]
 }
 `, clusterID, comment)
 }

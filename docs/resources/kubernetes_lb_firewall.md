@@ -17,22 +17,23 @@ The firewall rules of the load balancer of a Kubernetes cluster. The rule list i
 resource "pidginhost_kubernetes_lb_firewall" "example" {
   cluster_id = pidginhost_kubernetes_cluster.example.id
 
-  rule {
-    direction = "in"
-    action    = "ACCEPT"
-    protocol  = "tcp"
-    source    = "203.0.113.0/24"
-    dport     = "443"
-    comment   = "office"
-  }
-
-  rule {
-    direction = "in"
-    action    = "DROP"
-    protocol  = "tcp"
-    dport     = "443"
-    position  = 200
-  }
+  rule = [
+    {
+      direction = "in"
+      action    = "ACCEPT"
+      protocol  = "tcp"
+      source    = "203.0.113.0/24"
+      dport     = "443"
+      comment   = "office"
+    },
+    {
+      direction = "in"
+      action    = "DROP"
+      protocol  = "tcp"
+      dport     = "443"
+      position  = 200
+    },
+  ]
 }
 ```
 
@@ -45,13 +46,13 @@ resource "pidginhost_kubernetes_lb_firewall" "example" {
 
 ### Optional
 
-- `rule` (Block List) A firewall rule. Rules match existing ones on direction, action, protocol, addresses and ports; comment, enabled and position change in place. (see [below for nested schema](#nestedblock--rule))
+- `rule` (Attributes List) Rules of the load balancer. The list is authoritative: rules the load balancer has but the list does not are deleted. Rules match existing ones on direction, action, protocol, addresses and ports; comment, enabled and position change in place. (see [below for nested schema](#nestedatt--rule))
 
 ### Read-Only
 
 - `id` (String) Same as cluster_id.
 
-<a id="nestedblock--rule"></a>
+<a id="nestedatt--rule"></a>
 ### Nested Schema for `rule`
 
 Required:
