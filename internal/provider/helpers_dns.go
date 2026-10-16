@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -36,4 +38,11 @@ func dnsSourceAttribute() schema.StringAttribute {
 		Validators:    []validator.String{stringvalidator.OneOf("internal", "external")},
 		PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 	}
+}
+
+// domainError is secretRouteError for the domain endpoints, whose responses
+// can carry the registrant's personal data.
+func domainError(summary string, resp *http.Response, err error) diag.Diagnostic {
+	detail := secretRouteError(summary, resp, err).Detail()
+	return diag.NewErrorDiagnostic(summary, strings.Replace(detail, "they can carry credentials", "they can carry personal data", 1))
 }
