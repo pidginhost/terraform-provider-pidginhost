@@ -13,7 +13,7 @@ import (
 
 // serverModelV0 is pidginhost_server state written by provider 0.1.x. That
 // version also created and deleted a firewall rule set and an extra volume
-// for the server; those now have their own resources.
+// for the server; this version leaves those objects on the account.
 type serverModelV0 struct {
 	ID                      types.String `tfsdk:"id"`
 	Image                   types.String `tfsdk:"image"`
@@ -102,7 +102,7 @@ func (r *serverResource) UpgradeState(_ context.Context) map[int64]resource.Stat
 // upgradeServerV0 maps 0.1.x state onto the current schema. Attributes the
 // API reports are left for the refresh that follows to fill. The notes name
 // the objects 0.1.x created for the server, which stay on the account and
-// need importing into their own resources to stay under Terraform.
+// must now be managed separately through the API or panel.
 func upgradeServerV0(old serverModelV0) (serverModel, []string) {
 	m := serverModel{
 		ID:                    old.ID,
@@ -144,13 +144,13 @@ func upgradeServerV0(old serverModelV0) (serverModel, []string) {
 	var notes []string
 	if id := old.ExtraVolumeID.ValueString(); id != "" {
 		notes = append(notes, fmt.Sprintf("The extra volume %q (id %s) stays attached to the server. "+
-			"To keep managing it, import it: import { to = pidginhost_volume.%s  id = %q }",
-			old.ExtraVolumeAlias.ValueString(), id, "extra", id))
+			"This provider no longer manages or deletes it. Manage it separately through the API or panel.",
+			old.ExtraVolumeAlias.ValueString(), id))
 	}
 	if id := old.FirewallRulesSetID.ValueString(); id != "" && old.FirewallRulesCreate.ValueBool() {
 		notes = append(notes, fmt.Sprintf("The firewall rule set %q (id %s) stays applied to the server. "+
-			"To keep managing it, import it: import { to = pidginhost_firewall.%s  id = %q }",
-			old.FwRulesSet.ValueString(), id, "server", id))
+			"This provider no longer manages its rules or deletes it. Manage it separately through the API or panel.",
+			old.FwRulesSet.ValueString(), id))
 	}
 	return m, notes
 }

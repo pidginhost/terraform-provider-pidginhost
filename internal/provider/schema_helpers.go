@@ -33,11 +33,3 @@ func optionalBool(v types.Bool) *bool {
 	b := v.ValueBool()
 	return &b
 }
-
-func optionalInt32(v types.Int64) *int32 {
-	if v.IsNull() || v.IsUnknown() {
-		return nil
-	}
-	i := int32(v.ValueInt64())
-	return &i
-}

@@ -3,8 +3,11 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -75,11 +78,112 @@ func TestRetryTransportRepeatsReadsOnly(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK || calls.Load() != 3 {
 		t.Fatalf("GET: status %v err %v calls %d", resp, err, calls.Load())
 	}
+	_ = resp.Body.Close()
 
 	calls.Store(0)
 	resp, err = client.Post(srv.URL, "application/json", nil)
 	if err != nil || resp.StatusCode != http.StatusServiceUnavailable || calls.Load() != 1 {
 		t.Fatalf("POST must not be repeated: status %v err %v calls %d", resp, err, calls.Load())
+	}
+	_ = resp.Body.Close()
+}
+
+func TestRetryTransportReplaysThrottledWrites(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodDelete} {
+		for _, body := range []string{"", `{"project":"example"}`} {
+			t.Run(method+body, func(t *testing.T) {
+				var calls atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					got, _ := io.ReadAll(r.Body)
+					if string(got) != body {
+						t.Errorf("request body changed on retry")
+					}
+					if calls.Add(1) == 1 {
+						w.WriteHeader(http.StatusTooManyRequests)
+						return
+					}
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				defer srv.Close()
+				var reader io.Reader
+				if body != "" {
+					reader = strings.NewReader(body)
+				}
+				req, err := http.NewRequestWithContext(t.Context(), method, srv.URL, reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := &http.Client{Transport: &retryTransport{base: http.DefaultTransport, attempts: 3, wait: time.Millisecond}}
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = resp.Body.Close() }()
+				if resp.StatusCode != http.StatusNoContent || calls.Load() != 2 {
+					t.Fatalf("status %d, requests %d; want one successful retry", resp.StatusCode, calls.Load())
+				}
+			})
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRetryTransportDoesNotRepeatUnconfirmedWrites(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete} {
+		for _, status := range []int{0, 400, 409, 500, 502, 503, 504} {
+			t.Run(fmt.Sprintf("%s/%d", method, status), func(t *testing.T) {
+				calls := 0
+				transport := &retryTransport{attempts: 3, base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls++
+					_ = req.Body.Close()
+					if status == 0 {
+						return nil, errors.New("connection lost after sending request")
+					}
+					return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+				})}
+				req, err := http.NewRequestWithContext(t.Context(), method, "https://example.com", strings.NewReader(`{}`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := transport.RoundTrip(req)
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+				if calls != 1 || (status == 0 && err == nil) || (status != 0 && (err != nil || resp.StatusCode != status)) {
+					t.Fatalf("write outcome changed: calls=%d error=%v", calls, err)
+				}
+			})
+		}
+	}
+}
+
+type trackedBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedBody) Close() error { b.closed = true; return nil }
+
+func TestRetryTransportClosesReplayBodyOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	replay := &trackedBody{Reader: strings.NewReader(`{}`)}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://example.com", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.GetBody = func() (io.ReadCloser, error) { return replay, nil }
+	transport := &retryTransport{attempts: 3, wait: time.Hour, base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req.Body.Close()
+		cancel()
+		return &http.Response{StatusCode: 429, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	_, err = transport.RoundTrip(req)
+	if !errors.Is(err, context.Canceled) || !replay.closed {
+		t.Fatalf("canceled retry leaked body: closed=%t error=%v", replay.closed, err)
 	}
 }
 
