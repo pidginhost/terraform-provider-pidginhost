@@ -421,3 +421,31 @@ func TestDNSRecordImport(t *testing.T) {
 		t.Fatalf("missing AAAA: %v", diags)
 	}
 }
+
+func TestDNSRecordLeavesStateWhenItsZoneIsDeactivated(t *testing.T) {
+	for _, tc := range []struct {
+		zoneActive bool
+		wantGone   bool
+	}{{false, true}, {true, false}} {
+		client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+			switch call {
+			case "GET /api/freedns/dns/records/?domain=example.com&source=internal":
+				// The API refuses to list the records of an inactive zone.
+				return 400, map[string]any{"message": "FreeDNS is not active for this domain."}
+			case "GET /api/freedns/dns/":
+				return 200, []pidginhost.FreeDNSDomain{{Domain: "example.com", Active: tc.zoneActive, Source: "internal"}}
+			}
+			return 500, map[string]any{"detail": "unexpected call " + call}
+		})
+		r := &dnsRecordResource{client: client}
+		s := testSchema(r)
+		state := dnsRecordModel{ID: types.StringValue("x"), Zone: types.StringValue("example.com"), Source: types.StringValue("internal"),
+			Name: types.StringValue("www"), Type: types.StringValue("A"), TTL: types.Int64Value(14400), Address: types.StringValue("192.0.2.10")}
+		resp := resource.ReadResponse{State: testState(t, s, state)}
+		r.Read(context.Background(), resource.ReadRequest{State: testState(t, s, state)}, &resp)
+		gone := resp.State.Raw.IsNull()
+		if gone != tc.wantGone || resp.Diagnostics.HasError() == tc.wantGone {
+			t.Fatalf("zone active %v: removed %v, diagnostics %v", tc.zoneActive, gone, resp.Diagnostics)
+		}
+	}
+}

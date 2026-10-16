@@ -7,6 +7,7 @@
 - Resources for volumes, firewalls, public and floating IPs, private networks, buckets and their keys, snapshots and SSH keys.
 - Kubernetes clusters with node pools, routes, port forwards, a load balancer firewall and connected servers, plus a kubeconfig data source.
 - Data sources for images, packages, generations, storage products, Kubernetes cluster types, SSH keys and servers.
+- FreeDNS zones and records, and the name servers and glue records of domains registered with PidginHost.
 - Servers resize in place, and their password, SSH key, project, firewall and destroy protection change without replacing them.
 - Every resource that waits for the API takes a timeouts block.
 

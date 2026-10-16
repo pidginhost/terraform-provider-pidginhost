@@ -213,7 +213,7 @@ func (r *dnsRecordResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	records, httpResp, err := r.list(ctx, &state)
-	if isNotFound(httpResp, err) {
+	if isNotFound(httpResp, err) || err != nil && r.zoneGone(ctx, &state) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -316,6 +316,13 @@ func (r *dnsRecordResource) ImportState(ctx context.Context, req resource.Import
 	m.fillValues(found[0])
 	m.ID = m.id()
 	resp.Diagnostics.Append(resp.State.Set(ctx, m)...)
+}
+
+// zoneGone reports a zone whose FreeDNS is no longer active: the API then
+// refuses to list its records, and the records went with it.
+func (r *dnsRecordResource) zoneGone(ctx context.Context, m *dnsRecordModel) bool {
+	zones, _, err := r.client.FreednsAPI.FreednsDnsList(ctx).Execute()
+	return err == nil && findDNSZone(zones, m.Zone.ValueString(), m.Source.ValueString()) == nil
 }
 
 func (r *dnsRecordResource) list(ctx context.Context, m *dnsRecordModel) ([]pidginhost.DNSRecord, *http.Response, error) {
