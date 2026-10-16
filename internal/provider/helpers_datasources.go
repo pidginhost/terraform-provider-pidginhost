@@ -42,6 +42,10 @@ func computedString(description string) schema.StringAttribute {
 	return schema.StringAttribute{Computed: true, Description: description}
 }
 
+func computedInt(description string) schema.Int64Attribute {
+	return schema.Int64Attribute{Computed: true, Description: description}
+}
+
 func computedBool(description string) schema.BoolAttribute {
 	return schema.BoolAttribute{Computed: true, Description: description}
 }
