@@ -99,6 +99,7 @@ func (p *pidginhostProvider) Configure(ctx context.Context, req provider.Configu
 
 func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewServerResource,
 		NewSSHKeyResource,
 	}
 }
