@@ -110,6 +110,11 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 		NewBucketResource,
 		NewBucketCredentialsResource,
 		NewServerSnapshotResource,
+		NewKubernetesClusterResource,
+		NewKubernetesRouteResource,
+		NewKubernetesPortForwardResource,
+		NewKubernetesLBFirewallResource,
+		NewKubernetesClusterServerResource,
 	}
 }
 
@@ -123,6 +128,7 @@ func (p *pidginhostProvider) DataSources(_ context.Context) []func() datasource.
 		NewSSHKeyDataSource,
 		NewServerDataSource,
 		NewCatalogDataSource,
+		NewKubernetesKubeconfigDataSource,
 	}
 }
 
