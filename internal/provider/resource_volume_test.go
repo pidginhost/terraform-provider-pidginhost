@@ -1,14 +1,17 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	tfresource "github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -18,22 +21,22 @@ import (
 )
 
 func TestAccVolume(t *testing.T) {
-	servers := testAccServerIDs(t, 2)
-	product := testAccEnv(t, "TF_ACC_VOLUME_PRODUCT")
-	size, err := strconv.Atoi(testAccEnv(t, "TF_ACC_VOLUME_SIZE"))
+	alias := testAccName("vol")
+	servers := testAccServersConfig(t, alias, 2)
+	product := cmp.Or(os.Getenv("PIDGINHOST_ACC_VOLUME_PRODUCT"), "fast-storage")
+	size, err := strconv.Atoi(cmp.Or(os.Getenv("PIDGINHOST_ACC_VOLUME_SIZE"), "10"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	alias := testAccName("vol")
 	tfresource.Test(t, tfresource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []tfresource.TestStep{
 			{
-				Config: testAccVolumeConfig(servers[0], alias, product, size),
+				Config: servers + testAccVolumeConfig("pidginhost_server.acc0.id", alias, product, size),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_volume.test", tfjsonpath.New("alias"), knownvalue.StringExact(alias)),
-					statecheck.ExpectKnownValue("pidginhost_volume.test", tfjsonpath.New("server_id"), knownvalue.StringExact(servers[0])),
+					statecheck.CompareValuePairs("pidginhost_volume.test", tfjsonpath.New("server_id"), "pidginhost_server.acc0", tfjsonpath.New("id"), compare.ValuesSame()),
 				},
 			},
 			{
@@ -44,23 +47,24 @@ func TestAccVolume(t *testing.T) {
 			},
 			{
 				// Grow and move to the second server in place.
-				Config: testAccVolumeConfig(servers[1], alias, product, size+1),
+				Config: servers + testAccVolumeConfig("pidginhost_server.acc1.id", alias, product, size+1),
 				ConfigPlanChecks: tfresource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("pidginhost_volume.test", plancheck.ResourceActionUpdate)},
 				},
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_volume.test", tfjsonpath.New("size"), knownvalue.Int64Exact(int64(size+1))),
-					statecheck.ExpectKnownValue("pidginhost_volume.test", tfjsonpath.New("server_id"), knownvalue.StringExact(servers[1])),
+					statecheck.CompareValuePairs("pidginhost_volume.test", tfjsonpath.New("server_id"), "pidginhost_server.acc1", tfjsonpath.New("id"), compare.ValuesSame()),
 				},
 			},
 		},
 	})
 }
 
+// testAccVolumeConfig takes server as an expression, such as a reference.
 func testAccVolumeConfig(server, alias, product string, size int) string {
 	return fmt.Sprintf(`
 resource "pidginhost_volume" "test" {
-  server_id = %q
+  server_id = %s
   alias     = %q
   product   = %q
   size      = %d

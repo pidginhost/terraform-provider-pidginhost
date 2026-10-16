@@ -17,13 +17,13 @@ import (
 )
 
 func TestAccPrivateNetworkMember(t *testing.T) {
-	server := testAccServerIDs(t, 1)[0]
+	servers := testAccServersConfig(t, testAccName("pnm"), 1)
 	tfresource.Test(t, tfresource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []tfresource.TestStep{
 			{
-				Config: testAccPrivateNetworkMemberConfig(server, "203.0.113.10"),
+				Config: servers + testAccPrivateNetworkMemberConfig("203.0.113.10"),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_private_network_member.test", tfjsonpath.New("address"), knownvalue.StringExact("203.0.113.10")),
 				},
@@ -35,7 +35,7 @@ func TestAccPrivateNetworkMember(t *testing.T) {
 			},
 			{
 				// Every attribute is fixed at creation: a new address replaces the membership.
-				Config: testAccPrivateNetworkMemberConfig(server, "203.0.113.11"),
+				Config: servers + testAccPrivateNetworkMemberConfig("203.0.113.11"),
 				ConfigPlanChecks: tfresource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("pidginhost_private_network_member.test", plancheck.ResourceActionReplace)},
 				},
@@ -47,7 +47,7 @@ func TestAccPrivateNetworkMember(t *testing.T) {
 	})
 }
 
-func testAccPrivateNetworkMemberConfig(server, address string) string {
+func testAccPrivateNetworkMemberConfig(address string) string {
 	return fmt.Sprintf(`
 resource "pidginhost_private_network" "test" {
   address = "203.0.113.0/24"
@@ -55,10 +55,10 @@ resource "pidginhost_private_network" "test" {
 
 resource "pidginhost_private_network_member" "test" {
   network_id = pidginhost_private_network.test.id
-  server_id  = %q
+  server_id  = pidginhost_server.acc0.id
   address    = %q
 }
-`, server, address)
+`, address)
 }
 
 func TestPrivateNetworkMemberDeleteSendsThePrivateAddress(t *testing.T) {

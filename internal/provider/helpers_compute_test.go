@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,33 +92,36 @@ func nullTimeouts(t *testing.T, s schema.Schema) timeouts.Value {
 	return timeouts.Value{Object: types.ObjectNull(typ.(timeouts.Type).AttrTypes)}
 }
 
-// testAccEnv reads a setting the compute acceptance tests need beyond the
-// token: ids of existing servers and a storage product to use.
+// testAccServersConfig returns HCL for n servers, pidginhost_server.acc0 to
+// acc<n-1>, for the acceptance tests that need servers to act on. Hostnames
+// are prefix-0, prefix-1 and so on. It skips the test without TF_ACC, so
+// callers read their settings only in acceptance runs. All are optional:
 //
-//	TF_ACC_SERVER_IDS      two or more ids of active servers, comma separated
-//	TF_ACC_VOLUME_PRODUCT  storage product slug
-//	TF_ACC_VOLUME_SIZE     a valid size in GB for that product
-func testAccEnv(t *testing.T, name string) string {
+//	PIDGINHOST_ACC_IMAGE           image slug, default ubuntu24
+//	PIDGINHOST_ACC_PACKAGE         package slug, default cloudv-1
+//	PIDGINHOST_ACC_VOLUME_PRODUCT  storage product for TestAccVolume, default fast-storage
+//	PIDGINHOST_ACC_VOLUME_SIZE     volume size in GB for TestAccVolume, default 10
+func testAccServersConfig(t *testing.T, prefix string, n int) string {
 	t.Helper()
-	// Without TF_ACC resource.Test skips; skip before demanding settings too.
+	// Without TF_ACC resource.Test skips; skip before reading settings too.
 	if os.Getenv("TF_ACC") == "" {
 		t.Skip("acceptance tests run only with TF_ACC set")
 	}
-	value := os.Getenv(name)
-	if value == "" {
-		t.Fatalf("acceptance test needs %s", name)
-	}
-	return value
+	image := cmp.Or(os.Getenv("PIDGINHOST_ACC_IMAGE"), "ubuntu24")
+	pkg := cmp.Or(os.Getenv("PIDGINHOST_ACC_PACKAGE"), "cloudv-1")
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, `
+resource "pidginhost_server" "acc%d" {
+  hostname            = "%s-%d"
+  image               = %q
+  package             = %q
+  new_ipv4            = true
+  destroy_public_ipv4 = true
 }
-
-// testAccServerIDs returns n ids from TF_ACC_SERVER_IDS.
-func testAccServerIDs(t *testing.T, n int) []string {
-	t.Helper()
-	ids := strings.Split(testAccEnv(t, "TF_ACC_SERVER_IDS"), ",")
-	if len(ids) < n {
-		t.Fatalf("acceptance test needs %d ids in TF_ACC_SERVER_IDS", n)
+`, i, prefix, i, image, pkg)
 	}
-	return ids[:n]
+	return b.String()
 }
 
 func TestSplitImportID(t *testing.T) {

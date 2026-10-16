@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	tfresource "github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -18,14 +19,14 @@ import (
 )
 
 func TestAccFloatingIP(t *testing.T) {
-	server := testAccServerIDs(t, 1)[0]
 	label := testAccName("fip")
+	servers := testAccServersConfig(t, label, 1)
 	tfresource.Test(t, tfresource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []tfresource.TestStep{
 			{
-				Config: testAccFloatingIPConfig(label, ""),
+				Config: servers + testAccFloatingIPConfig(label, ""),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_floating_ip.test", tfjsonpath.New("address"), knownvalue.NotNull()),
 					statecheck.ExpectKnownValue("pidginhost_floating_ip.test", tfjsonpath.New("label"), knownvalue.StringExact(label)),
@@ -41,16 +42,17 @@ func TestAccFloatingIP(t *testing.T) {
 			},
 			{
 				// Set the PTR and authorize a server in place.
-				Config: testAccFloatingIPConfig(label, fmt.Sprintf(`
+				Config: servers + testAccFloatingIPConfig(label, fmt.Sprintf(`
   reverse_dns           = "%s.example.com"
-  authorized_server_ids = [%q]`, label, server)),
+  authorized_server_ids = [pidginhost_server.acc0.id]`, label)),
 				ConfigPlanChecks: tfresource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("pidginhost_floating_ip.test", plancheck.ResourceActionUpdate)},
 				},
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_floating_ip.test", tfjsonpath.New("reverse_dns"), knownvalue.StringExact(label+".example.com")),
-					statecheck.ExpectKnownValue("pidginhost_floating_ip.test", tfjsonpath.New("authorized_server_ids"),
-						knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(server)})),
+					statecheck.ExpectKnownValue("pidginhost_floating_ip.test", tfjsonpath.New("authorized_server_ids"), knownvalue.SetSizeExact(1)),
+					statecheck.CompareValueCollection("pidginhost_floating_ip.test", []tfjsonpath.Path{tfjsonpath.New("authorized_server_ids")},
+						"pidginhost_server.acc0", tfjsonpath.New("id"), compare.ValuesSame()),
 				},
 			},
 		},

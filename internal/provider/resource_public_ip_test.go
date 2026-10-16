@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	tfresource "github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -16,14 +17,15 @@ import (
 )
 
 func TestAccPublicIP(t *testing.T) {
-	server := testAccServerIDs(t, 1)[0]
-	rdns := testAccName("ip") + ".example.com"
+	prefix := testAccName("ip")
+	servers := testAccServersConfig(t, prefix, 1)
+	rdns := prefix + ".example.com"
 	tfresource.Test(t, tfresource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []tfresource.TestStep{
 			{
-				Config: `resource "pidginhost_public_ip" "test" { version = 4 }`,
+				Config: servers + `resource "pidginhost_public_ip" "test" { version = 4 }`,
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("address"), knownvalue.NotNull()),
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("server_id"), knownvalue.Null()),
@@ -39,18 +41,18 @@ func TestAccPublicIP(t *testing.T) {
 			},
 			{
 				// Attach and set the PTR in place.
-				Config: fmt.Sprintf(`
+				Config: servers + fmt.Sprintf(`
 resource "pidginhost_public_ip" "test" {
   version     = 4
-  server_id   = %q
+  server_id   = pidginhost_server.acc0.id
   reverse_dns = %q
 }
-`, server, rdns),
+`, rdns),
 				ConfigPlanChecks: tfresource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("pidginhost_public_ip.test", plancheck.ResourceActionUpdate)},
 				},
 				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("server_id"), knownvalue.StringExact(server)),
+					statecheck.CompareValuePairs("pidginhost_public_ip.test", tfjsonpath.New("server_id"), "pidginhost_server.acc0", tfjsonpath.New("id"), compare.ValuesSame()),
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("reverse_dns"), knownvalue.StringExact(rdns)),
 				},
 			},

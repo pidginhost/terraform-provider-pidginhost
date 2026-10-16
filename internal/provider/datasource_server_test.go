@@ -2,12 +2,12 @@ package provider
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
@@ -130,38 +130,24 @@ func TestServerDataSourceLooksUpByID(t *testing.T) {
 }
 
 func TestAccServerDataSource(t *testing.T) {
-	id := testAccExistingServerID(t)
+	servers := testAccServersConfig(t, testAccName("ds"), 1)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{{
-			Config: fmt.Sprintf(`
+			Config: servers + `
 data "pidginhost_server" "by_id" {
-  id = %q
+  id = pidginhost_server.acc0.id
 }
 
 data "pidginhost_server" "by_hostname" {
   hostname = data.pidginhost_server.by_id.hostname
 }
-`, id),
+`,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue("data.pidginhost_server.by_id", tfjsonpath.New("status"), knownvalue.NotNull()),
-				statecheck.ExpectKnownValue("data.pidginhost_server.by_hostname", tfjsonpath.New("id"), knownvalue.StringExact(id)),
+				statecheck.CompareValuePairs("data.pidginhost_server.by_hostname", tfjsonpath.New("id"), "pidginhost_server.acc0", tfjsonpath.New("id"), compare.ValuesSame()),
 			},
 		}},
 	})
-}
-
-// testAccExistingServerID returns the first id in TF_ACC_SERVER_IDS, the
-// active servers the compute acceptance tests use too.
-func testAccExistingServerID(t *testing.T) string {
-	t.Helper()
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("acceptance tests run only with TF_ACC set")
-	}
-	id, _, _ := strings.Cut(os.Getenv("TF_ACC_SERVER_IDS"), ",")
-	if id == "" {
-		t.Fatal("acceptance test needs TF_ACC_SERVER_IDS")
-	}
-	return id
 }
