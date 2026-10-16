@@ -121,7 +121,7 @@ func (r *serverSnapshotResource) Create(ctx context.Context, req resource.Create
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	serverID, err := apiID(plan.ServerID.ValueString())
+	serverID, err := parseID(plan.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Creating server snapshot", err.Error())
 		return
@@ -175,7 +175,7 @@ func (r *serverSnapshotResource) Read(ctx context.Context, req resource.ReadRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	serverID, err := apiID(state.ServerID.ValueString())
+	serverID, err := parseID(state.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Reading server snapshot", err.Error())
 		return
@@ -216,7 +216,7 @@ func (r *serverSnapshotResource) Delete(ctx context.Context, req resource.Delete
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	serverID, err := apiID(state.ServerID.ValueString())
+	serverID, err := parseID(state.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Deleting server snapshot", err.Error())
 		return
@@ -236,7 +236,7 @@ func (r *serverSnapshotResource) Delete(ctx context.Context, req resource.Delete
 	}
 	if snapshot.State == snapshotDeleting {
 		// A deletion already in progress only needs the wait.
-		if err := waitFor(ctx, storagePoll, gone); err != nil {
+		if err := waitFor(ctx, pollInterval, gone); err != nil {
 			resp.Diagnostics.AddError("Waiting for server snapshot deletion", describeError(err))
 		}
 		return
@@ -268,7 +268,7 @@ func (r *serverSnapshotResource) Delete(ctx context.Context, req resource.Delete
 
 func (r *serverSnapshotResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	serverID, name, ok := strings.Cut(req.ID, "/")
-	if _, err := apiID(serverID); !ok || err != nil || name == "" {
+	if _, err := parseID(serverID); !ok || err != nil || name == "" {
 		resp.Diagnostics.AddError("Importing server snapshot",
 			fmt.Sprintf("Expected an id like <server_id>/<snapshot_name>, got %q.", req.ID))
 		return

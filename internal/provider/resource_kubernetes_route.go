@@ -199,7 +199,7 @@ func (r *kubernetesRouteResource) Create(ctx context.Context, req resource.Creat
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(plan.ClusterID.ValueString())
+	clusterID, err := parseID(plan.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -248,7 +248,7 @@ func (r *kubernetesRouteResource) Read(ctx context.Context, req resource.ReadReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(state.ClusterID.ValueString())
+	clusterID, err := parseID(state.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -287,7 +287,7 @@ func (r *kubernetesRouteResource) Update(ctx context.Context, req resource.Updat
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(plan.ClusterID.ValueString())
+	clusterID, err := parseID(plan.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -342,7 +342,7 @@ func (r *kubernetesRouteResource) Delete(ctx context.Context, req resource.Delet
 		resp.Diagnostics.AddError("Platform route", "The route the platform keeps for the Kubernetes API is never deleted.")
 		return
 	}
-	clusterID, err := int32ID(state.ClusterID.ValueString())
+	clusterID, err := parseID(state.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return

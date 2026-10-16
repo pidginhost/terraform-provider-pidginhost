@@ -97,7 +97,7 @@ func (r *privateNetworkResource) Read(ctx context.Context, req resource.ReadRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid private network id", err.Error())
 		return
@@ -121,7 +121,7 @@ func (r *privateNetworkResource) Update(ctx context.Context, req resource.Update
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(plan.ID.ValueString())
+	id, err := parseID(plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid private network id", err.Error())
 		return
@@ -143,7 +143,7 @@ func (r *privateNetworkResource) Delete(ctx context.Context, req resource.Delete
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid private network id", err.Error())
 		return

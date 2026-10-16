@@ -135,7 +135,7 @@ func (r *bucketResource) Read(ctx context.Context, req resource.ReadRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := apiID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Reading bucket", err.Error())
 		return
@@ -164,7 +164,7 @@ func (r *bucketResource) Update(ctx context.Context, req resource.UpdateRequest,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	id, err := apiID(plan.ID.ValueString())
+	id, err := parseID(plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Updating bucket", err.Error())
 		return
@@ -221,7 +221,7 @@ func (r *bucketResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	id, err := apiID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Deleting bucket", err.Error())
 		return
@@ -271,7 +271,7 @@ func waitBucketActive(ctx context.Context, client *pidginhost.APIClient, bucket 
 	if bucket.Status == pidginhost.RESOURCESTATUSENUM_ACTIVE {
 		return bucket, nil
 	}
-	err := waitFor(ctx, storagePoll, func() (bool, error) {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		current, _, err := client.CloudAPI.CloudBucketsRetrieve(ctx, bucket.Id).Execute()
 		if err != nil {
 			return false, err
@@ -289,7 +289,7 @@ func waitBucketActive(ctx context.Context, client *pidginhost.APIClient, bucket 
 // deleted status. The API keeps listing it while the deletion runs, and the
 // name stays taken until then.
 func waitBucketGone(ctx context.Context, client *pidginhost.APIClient, id int32) error {
-	return waitFor(ctx, storagePoll, func() (bool, error) {
+	return waitFor(ctx, pollInterval, func() (bool, error) {
 		buckets, _, err := client.CloudAPI.CloudBucketsList(ctx).Execute()
 		if err != nil {
 			return false, err

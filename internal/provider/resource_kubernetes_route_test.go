@@ -126,7 +126,7 @@ func TestRouteFillKeepsEachProtocolsFields(t *testing.T) {
 	}
 }
 
-func TestSplitImportID(t *testing.T) {
+func TestSplitImportIDForRoutes(t *testing.T) {
 	if parts, ok := splitImportID("7/tcp/12", 3); !ok || parts[2] != "12" {
 		t.Fatalf("got %v %v", parts, ok)
 	}
@@ -135,7 +135,7 @@ func TestSplitImportID(t *testing.T) {
 			t.Errorf("%q was accepted", id)
 		}
 	}
-	if _, err := int32ID("x7"); err == nil {
+	if _, err := parseID("x7"); err == nil {
 		t.Error("x7 was accepted as an ID")
 	}
 }

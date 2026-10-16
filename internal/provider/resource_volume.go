@@ -130,7 +130,7 @@ func (r *volumeResource) Read(ctx context.Context, req resource.ReadRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid volume id", err.Error())
 		return
@@ -161,7 +161,7 @@ func (r *volumeResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid volume id", err.Error())
 		return
@@ -216,7 +216,7 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid volume id", err.Error())
 		return
@@ -250,7 +250,7 @@ func (r *volumeResource) ImportState(ctx context.Context, req resource.ImportSta
 // move detaches the volume, attaches it to serverID and waits until the
 // volume names its new server.
 func (r *volumeResource) move(ctx context.Context, id int32, serverID string) (*pidginhost.Volume, error) {
-	vm, err := parseInt32ID(serverID)
+	vm, err := parseID(serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (r *volumeResource) detach(ctx context.Context, id int32) (*pidginhost.Volu
 // volume no longer exists.
 func (r *volumeResource) waitVolume(ctx context.Context, id int32, done func(*pidginhost.Volume) bool) (*pidginhost.Volume, error) {
 	var v *pidginhost.Volume
-	err := waitFor(ctx, computePollInterval, func() (bool, error) {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		got, httpResp, err := r.client.CloudAPI.CloudVolumesRetrieve(ctx, id).Execute()
 		if isNotFound(httpResp, err) {
 			v = nil
@@ -317,7 +317,7 @@ func (r *volumeResource) serverOf(ctx context.Context, v *pidginhost.Volume, kno
 	if v.Server == "" {
 		return types.StringNull(), nil
 	}
-	if id, err := parseInt32ID(known); err == nil {
+	if id, err := parseID(known); err == nil {
 		found, err := r.serverHasVolume(ctx, id, v.Id)
 		if err != nil {
 			return types.StringNull(), err

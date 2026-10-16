@@ -140,7 +140,7 @@ func (r *floatingIPResource) Read(ctx context.Context, req resource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid floating IP id", err.Error())
 		return
@@ -167,7 +167,7 @@ func (r *floatingIPResource) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid floating IP id", err.Error())
 		return
@@ -199,7 +199,7 @@ func (r *floatingIPResource) Delete(ctx context.Context, req resource.DeleteRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid floating IP id", err.Error())
 		return
@@ -237,7 +237,7 @@ func (r *floatingIPResource) authorize(ctx context.Context, version int64, id in
 }
 
 func (r *floatingIPResource) setAuthorized(ctx context.Context, version int64, id int32, server string, allowed bool) error {
-	serverID, err := parseInt32ID(server)
+	serverID, err := parseID(server)
 	if err != nil {
 		return err
 	}

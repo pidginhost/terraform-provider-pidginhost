@@ -151,7 +151,7 @@ func (r *kubernetesLBFirewallResource) Read(ctx context.Context, req resource.Re
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(state.ClusterID.ValueString())
+	clusterID, err := parseID(state.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -195,7 +195,7 @@ func (r *kubernetesLBFirewallResource) Delete(ctx context.Context, req resource.
 }
 
 func (r *kubernetesLBFirewallResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	if _, err := int32ID(req.ID); err != nil {
+	if _, err := parseID(req.ID); err != nil {
 		resp.Diagnostics.AddError("Invalid import ID", fmt.Sprintf("Expected the cluster ID, got %q.", req.ID))
 		return
 	}
@@ -208,7 +208,7 @@ var errClusterGone = errors.New("the Kubernetes cluster no longer exists")
 // apply makes the load balancer rules match m.Rules, deleting first, then
 // patching, then creating, and refreshes m from the result.
 func (r *kubernetesLBFirewallResource) apply(ctx context.Context, m *kubernetesLBFirewallModel) error {
-	clusterID, err := int32ID(m.ClusterID.ValueString())
+	clusterID, err := parseID(m.ClusterID.ValueString())
 	if err != nil {
 		return err
 	}

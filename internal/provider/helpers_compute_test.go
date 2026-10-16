@@ -28,7 +28,7 @@ import (
 // that lists the calls made so far.
 func fakeAPI(t *testing.T, handle func(call string, body map[string]any) (int, any)) (*pidginhost.APIClient, func() []string) {
 	t.Helper()
-	computePollInterval = time.Millisecond
+	pollInterval = time.Millisecond
 	var mu sync.Mutex
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

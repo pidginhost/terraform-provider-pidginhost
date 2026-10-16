@@ -30,9 +30,6 @@ var (
 	_ resource.ResourceWithUpgradeState = &serverResource{}
 )
 
-// pollInterval is how often waits ask the API for progress. Tests shorten it.
-var pollInterval = 5 * time.Second
-
 func NewServerResource() resource.Resource { return &serverResource{} }
 
 type serverResource struct{ client *pidginhost.APIClient }
@@ -630,14 +627,6 @@ func policyValue(v types.String) *pidginhost.FwPolicyOutEnum {
 // isGone reports a status the API keeps for deleted objects.
 func isGone(status string) bool {
 	return status == "cancelled" || status == "terminated"
-}
-
-func parseID(id string) (int32, error) {
-	n, err := strconv.ParseInt(id, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not a numeric id", id)
-	}
-	return int32(n), nil
 }
 
 // boundAddress is a public address to release after its server is gone.

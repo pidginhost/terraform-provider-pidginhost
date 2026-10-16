@@ -83,9 +83,9 @@ resource "pidginhost_kubernetes_cluster" "test" {
 // fastKubernetesPoll makes the waits of a test poll without pausing.
 func fastKubernetesPoll(t *testing.T) {
 	t.Helper()
-	old := kubernetesPoll
-	kubernetesPoll = time.Millisecond
-	t.Cleanup(func() { kubernetesPoll = old })
+	old := pollInterval
+	pollInterval = time.Millisecond
+	t.Cleanup(func() { pollInterval = old })
 }
 
 // testKubernetesAPI serves handler as a fake API and returns a client for it.

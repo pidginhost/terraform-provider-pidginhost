@@ -541,7 +541,7 @@ func replaceBoolIfChanged() planmodifier.Bool {
 // API answers 404.
 func pollCluster(ctx context.Context, client *pidginhost.APIClient, id string, done func(*pidginhost.ClusterDetail) bool) (*pidginhost.ClusterDetail, error) {
 	var cluster *pidginhost.ClusterDetail
-	err := waitFor(ctx, kubernetesPoll, func() (bool, error) {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		c, httpResp, err := client.KubernetesAPI.KubernetesClustersRetrieve(ctx, id).Execute()
 		if isNotFound(httpResp, err) {
 			c, err = nil, nil
@@ -705,7 +705,7 @@ func encryptionAt(e *pidginhost.ClusterEncryption, mode string) bool {
 // waitEncryption waits until no encryption change runs.
 func waitEncryption(ctx context.Context, client *pidginhost.APIClient, id string) (*pidginhost.ClusterEncryption, error) {
 	var state *pidginhost.ClusterEncryption
-	err := waitFor(ctx, kubernetesPoll, func() (bool, error) {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		e, _, err := client.KubernetesAPI.KubernetesClustersEncryptionRetrieve(ctx, id).Execute()
 		if err != nil {
 			return false, errors.New(describeError(err))

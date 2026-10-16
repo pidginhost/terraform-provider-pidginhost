@@ -17,6 +17,18 @@ import (
 
 const defaultBaseURL = "https://www.pidginhost.com"
 
+// pollInterval is how often waits ask the API for progress. Tests shorten it.
+var pollInterval = 5 * time.Second
+
+// parseID reads the numeric id the API uses in its paths.
+func parseID(id string) (int32, error) {
+	n, err := strconv.ParseInt(id, 10, 32)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%q is not a numeric PidginHost id", id)
+	}
+	return int32(n), nil
+}
+
 // maxPages stops a list walk that never reaches its last page.
 const maxPages = 1000
 

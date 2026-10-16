@@ -160,7 +160,7 @@ func (r *firewallResource) Read(ctx context.Context, req resource.ReadRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid firewall id", err.Error())
 		return
@@ -185,7 +185,7 @@ func (r *firewallResource) Update(ctx context.Context, req resource.UpdateReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid firewall id", err.Error())
 		return
@@ -215,7 +215,7 @@ func (r *firewallResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid firewall id", err.Error())
 		return

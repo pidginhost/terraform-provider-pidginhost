@@ -100,7 +100,7 @@ func (r *kubernetesClusterServerResource) Create(ctx context.Context, req resour
 	defer cancel()
 
 	clusterID := plan.ClusterID.ValueString()
-	serverID, err := int32ID(plan.ServerID.ValueString())
+	serverID, err := parseID(plan.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("server_id"), "Invalid server ID", err.Error())
 		return
@@ -129,7 +129,7 @@ func (r *kubernetesClusterServerResource) Read(ctx context.Context, req resource
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	serverID, err := int32ID(state.ServerID.ValueString())
+	serverID, err := parseID(state.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("server_id"), "Invalid server ID", err.Error())
 		return
@@ -172,7 +172,7 @@ func (r *kubernetesClusterServerResource) Delete(ctx context.Context, req resour
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	serverID, err := int32ID(state.ServerID.ValueString())
+	serverID, err := parseID(state.ServerID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("server_id"), "Invalid server ID", err.Error())
 		return
@@ -255,7 +255,7 @@ func disconnectServer(ctx context.Context, client *pidginhost.APIClient, cluster
 // or no longer lists it.
 func waitServerConnection(ctx context.Context, client *pidginhost.APIClient, clusterID string, serverID int32, connected bool) (*pidginhost.ConnectedVM, error) {
 	var vm *pidginhost.ConnectedVM
-	err := waitFor(ctx, kubernetesPoll, func() (bool, error) {
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		var err error
 		vm, err = connectedServer(ctx, client, clusterID, serverID)
 		return (vm != nil) == connected, err

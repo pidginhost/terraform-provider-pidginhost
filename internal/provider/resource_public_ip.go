@@ -157,7 +157,7 @@ func (r *publicIPResource) Read(ctx context.Context, req resource.ReadRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid public IP id", err.Error())
 		return
@@ -190,7 +190,7 @@ func (r *publicIPResource) Update(ctx context.Context, req resource.UpdateReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid public IP id", err.Error())
 		return
@@ -245,7 +245,7 @@ func (r *publicIPResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := parseInt32ID(state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid public IP id", err.Error())
 		return
@@ -306,7 +306,7 @@ func (r *publicIPResource) bind(ctx context.Context, version int64, ip *pidginho
 		if httpResp, err := r.detach(ctx, version, ip.Id); err != nil && !isNotFound(httpResp, err) {
 			return false, err
 		}
-		err := waitFor(ctx, computePollInterval, func() (bool, error) {
+		err := waitFor(ctx, pollInterval, func() (bool, error) {
 			got, _, err := r.get(ctx, version, ip.Id)
 			return err == nil && !ipBound(got), err
 		})
@@ -317,7 +317,7 @@ func (r *publicIPResource) bind(ctx context.Context, version int64, ip *pidginho
 	if !attach {
 		return false, nil
 	}
-	serverID, err := parseInt32ID(want)
+	serverID, err := parseID(want)
 	if err != nil {
 		return false, err
 	}

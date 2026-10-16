@@ -75,7 +75,7 @@ func (r *kubernetesPortForwardResource) Create(ctx context.Context, req resource
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(plan.ClusterID.ValueString())
+	clusterID, err := parseID(plan.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -100,7 +100,7 @@ func (r *kubernetesPortForwardResource) Read(ctx context.Context, req resource.R
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(state.ClusterID.ValueString())
+	clusterID, err := parseID(state.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -124,7 +124,7 @@ func (r *kubernetesPortForwardResource) Update(ctx context.Context, req resource
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(plan.ClusterID.ValueString())
+	clusterID, err := parseID(plan.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
@@ -146,7 +146,7 @@ func (r *kubernetesPortForwardResource) Delete(ctx context.Context, req resource
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	clusterID, err := int32ID(state.ClusterID.ValueString())
+	clusterID, err := parseID(state.ClusterID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return

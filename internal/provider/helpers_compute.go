@@ -14,24 +14,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
-// computePollInterval is how often the compute resources poll an object
-// that the API changes asynchronously. Tests shorten it.
-var computePollInterval = 5 * time.Second
-
 // computeDefaultTimeout bounds the waits of the compute resources.
 const computeDefaultTimeout = 20 * time.Minute
 
 // numericID refuses ids that cannot name an API object, before the plan.
 var numericID = stringvalidator.RegexMatches(regexp.MustCompile(`^[1-9][0-9]*$`), "must be a numeric id")
-
-// parseInt32ID reads an API id kept as a decimal string.
-func parseInt32ID(s string) (int32, error) {
-	n, err := strconv.ParseInt(s, 10, 32)
-	if err != nil || n < 1 {
-		return 0, fmt.Errorf("%q is not a numeric PidginHost id", s)
-	}
-	return int32(n), nil
-}
 
 // splitImportID splits an import id of the form "a/b" into n non-empty parts.
 func splitImportID(id string, n int) ([]string, bool) {
@@ -50,7 +37,7 @@ func importIPVersionAndID(ctx context.Context, req resource.ImportStateRequest, 
 		resp.Diagnostics.AddError("Invalid import id", fmt.Sprintf("Expected <version>/<id>, such as 4/1234; got %q.", req.ID))
 		return
 	}
-	if _, err := parseInt32ID(parts[1]); err != nil {
+	if _, err := parseID(parts[1]); err != nil {
 		resp.Diagnostics.AddError("Invalid import id", err.Error())
 		return
 	}

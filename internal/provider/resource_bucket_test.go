@@ -143,7 +143,7 @@ func testCtx(t *testing.T) context.Context {
 }
 
 func fastStoragePolls(t *testing.T) {
-	saved := storagePoll
-	storagePoll = time.Millisecond
-	t.Cleanup(func() { storagePoll = saved })
+	saved := pollInterval
+	pollInterval = time.Millisecond
+	t.Cleanup(func() { pollInterval = saved })
 }

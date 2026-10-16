@@ -3,18 +3,13 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	pidginhost "github.com/pidginhost/sdk-go"
 )
-
-// storagePoll paces the waits of the storage resources; tests shorten it.
-var storagePoll = 5 * time.Second
 
 // activityResend spaces the resubmissions of a server operation refused
 // because another operation held the server.
@@ -23,15 +18,6 @@ var activityResend = 30 * time.Second
 // serverBusy is how the API words a refusal that ran nothing because another
 // operation held the server.
 const serverBusy = "another server operation is in progress"
-
-// apiID parses an object id kept as a decimal string in the state.
-func apiID(id string) (int32, error) {
-	n, err := strconv.ParseInt(id, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid id %q: expected a number", id)
-	}
-	return int32(n), nil
-}
 
 // serverActivity returns a reader of a server's activity log.
 func serverActivity(ctx context.Context, client *pidginhost.APIClient, serverID int32) func() ([]pidginhost.ActivityLogEntry, error) {
@@ -87,7 +73,7 @@ func activityRefusal(before map[activityKey]int, logs []pidginhost.ActivityLogEn
 func waitActivity(ctx context.Context, logs func() ([]pidginhost.ActivityLogEntry, error), before map[activityKey]int,
 	refusals []string, submit func() error, done func() (bool, error)) error {
 	var resendAt time.Time
-	return waitFor(ctx, storagePoll, func() (bool, error) {
+	return waitFor(ctx, pollInterval, func() (bool, error) {
 		entries, err := logs()
 		if err != nil {
 			return false, err

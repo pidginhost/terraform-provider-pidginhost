@@ -98,7 +98,7 @@ func (r *bucketCredentialsResource) Create(ctx context.Context, req resource.Cre
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := apiID(plan.BucketID.ValueString())
+	id, err := parseID(plan.BucketID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Reading bucket credentials", err.Error())
 		return
@@ -121,7 +121,7 @@ func (r *bucketCredentialsResource) Read(ctx context.Context, req resource.ReadR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := apiID(state.BucketID.ValueString())
+	id, err := parseID(state.BucketID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Reading bucket credentials", err.Error())
 		return
@@ -151,7 +151,7 @@ func (r *bucketCredentialsResource) Update(ctx context.Context, req resource.Upd
 		resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 		return
 	}
-	id, err := apiID(state.BucketID.ValueString())
+	id, err := parseID(state.BucketID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Rotating bucket credentials", err.Error())
 		return

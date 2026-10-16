@@ -231,8 +231,8 @@ func memberOf(server *pidginhost.ServerDetail, network string) *pidginhost.Serve
 }
 
 func (m *privateNetworkMemberModel) ids(diags interface{ AddError(string, string) }) (int32, int32, bool) {
-	networkID, err := parseInt32ID(m.NetworkID.ValueString())
-	serverID, serverErr := parseInt32ID(m.ServerID.ValueString())
+	networkID, err := parseID(m.NetworkID.ValueString())
+	serverID, serverErr := parseID(m.ServerID.ValueString())
 	if err = errors.Join(err, serverErr); err != nil {
 		diags.AddError("Invalid private network membership", err.Error())
 		return 0, 0, false
