@@ -8,6 +8,9 @@ builds:
     binary: terraform-provider-pidginhost_v{{ .Version }}
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
@@ -32,6 +35,9 @@ archives:
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
 
 signs:
   - id: checksum
@@ -53,6 +59,9 @@ release:
     owner: pidginhost
     name: terraform-provider-pidginhost
   draft: true
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
 
 changelog:
   sort: desc
