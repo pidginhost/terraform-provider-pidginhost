@@ -105,6 +105,7 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 		NewPublicIPResource,
 		NewFloatingIPResource,
 		NewPrivateNetworkResource,
+		NewPrivateNetworkMemberResource,
 	}
 }
 
