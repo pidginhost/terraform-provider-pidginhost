@@ -6,25 +6,25 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	pidginhost "github.com/pidginhost/terraform-provider-pidginhost/internal/provider"
+
+	"github.com/pidginhost/terraform-provider-pidginhost/internal/provider"
 )
 
-var (
-	// version is set by goreleaser or go build during compilation.
-	version = "dev"
-)
+//go:generate go tool tfplugindocs generate --provider-name pidginhost
+
+// version is set by goreleaser at build time.
+var version = "dev"
 
 func main() {
+	var debug bool
+	flag.BoolVar(&debug, "debug", false, "run the provider with support for debuggers like delve")
 	flag.Parse()
 
-	pidginhost.SetVersion(version)
-
-	opts := providerserver.ServeOpts{
+	err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
 		Address: "registry.terraform.io/pidginhost/pidginhost",
-	}
-
-	err := providerserver.Serve(context.Background(), pidginhost.New, opts)
+		Debug:   debug,
+	})
 	if err != nil {
-		log.Fatalf("Error serving PidginHost provider: %s", err)
+		log.Fatal(err)
 	}
 }

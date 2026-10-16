@@ -2,1175 +2,694 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	pidginhost "github.com/pidginhost/sdk-go"
 )
 
-var _ resource.Resource = &serverResource{}
-var _ resource.ResourceWithConfigure = &serverResource{}
-var _ resource.ResourceWithImportState = &serverResource{}
+var (
+	_ resource.ResourceWithConfigure    = &serverResource{}
+	_ resource.ResourceWithImportState  = &serverResource{}
+	_ resource.ResourceWithUpgradeState = &serverResource{}
+)
 
-func NewServerResource() resource.Resource {
-	return &serverResource{}
+func NewServerResource() resource.Resource { return &serverResource{} }
+
+type serverResource struct{ client *pidginhost.APIClient }
+
+type serverModel struct {
+	ID                    types.String   `tfsdk:"id"`
+	Hostname              types.String   `tfsdk:"hostname"`
+	Image                 types.String   `tfsdk:"image"`
+	Package               types.String   `tfsdk:"package"`
+	Generation            types.String   `tfsdk:"generation"`
+	Project               types.String   `tfsdk:"project"`
+	Password              types.String   `tfsdk:"password"`
+	SSHPubKey             types.String   `tfsdk:"ssh_pub_key"`
+	SSHPubKeyID           types.String   `tfsdk:"ssh_pub_key_id"`
+	UserData              types.String   `tfsdk:"user_data"`
+	PublicIP              types.String   `tfsdk:"public_ip"`
+	NewIPv4               types.Bool     `tfsdk:"new_ipv4"`
+	PublicIPv6            types.String   `tfsdk:"public_ipv6"`
+	NewIPv6               types.Bool     `tfsdk:"new_ipv6"`
+	NoNetworkAcknowledged types.Bool     `tfsdk:"no_network_acknowledged"`
+	PrivateNetwork        types.String   `tfsdk:"private_network"`
+	PrivateAddress        types.String   `tfsdk:"private_address"`
+	EnableHA              types.Bool     `tfsdk:"enable_ha"`
+	DestroyProtection     types.Bool     `tfsdk:"destroy_protection"`
+	FwRulesSet            types.String   `tfsdk:"fw_rules_set"`
+	FwPolicyIn            types.String   `tfsdk:"fw_policy_in"`
+	FwPolicyOut           types.String   `tfsdk:"fw_policy_out"`
+	DestroyPublicIPv4     types.Bool     `tfsdk:"destroy_public_ipv4"`
+	DestroyPublicIPv6     types.Bool     `tfsdk:"destroy_public_ipv6"`
+	Status                types.String   `tfsdk:"status"`
+	IPv4Address           types.String   `tfsdk:"ipv4_address"`
+	IPv6Address           types.String   `tfsdk:"ipv6_address"`
+	CPUs                  types.Int64    `tfsdk:"cpus"`
+	Memory                types.Int64    `tfsdk:"memory"`
+	DiskSize              types.Int64    `tfsdk:"disk_size"`
+	Username              types.String   `tfsdk:"username"`
+	Timeouts              timeouts.Value `tfsdk:"timeouts"`
 }
 
-type serverResource struct {
-	client *Client
+// notNumeric refuses an id where the API echoes a slug or name back, which
+// would otherwise show as a change on every plan.
+func notNumeric(what string) validator.String {
+	return stringvalidator.RegexMatches(regexp.MustCompile(`^$|[^0-9]`), "must be the "+what+", not its numeric id")
 }
 
-type serverResourceModel struct {
-	ID                      types.String        `tfsdk:"id"`
-	Image                   types.String        `tfsdk:"image"`
-	Package                 types.String        `tfsdk:"package"`
-	Hostname                types.String        `tfsdk:"hostname"`
-	Project                 types.String        `tfsdk:"project"`
-	Password                types.String        `tfsdk:"password"`
-	SSHPubKey               types.String        `tfsdk:"ssh_pub_key"`
-	SSHPubKeyID             types.String        `tfsdk:"ssh_pub_key_id"`
-	PublicIP                types.String        `tfsdk:"public_ip"`
-	NewIPv4                 types.Bool          `tfsdk:"new_ipv4"`
-	PublicIPv6              types.String        `tfsdk:"public_ipv6"`
-	NewIPv6                 types.Bool          `tfsdk:"new_ipv6"`
-	DestroyPublicIPv4       types.Bool          `tfsdk:"destroy_public_ipv4"`
-	DestroyPublicIPv6       types.Bool          `tfsdk:"destroy_public_ipv6"`
-	FwRulesSet              types.String        `tfsdk:"fw_rules_set"`
-	FwPolicyIn              types.String        `tfsdk:"fw_policy_in"`
-	FwPolicyOut             types.String        `tfsdk:"fw_policy_out"`
-	PrivateNetwork          types.String        `tfsdk:"private_network"`
-	PrivateAddress          types.String        `tfsdk:"private_address"`
-	NoNetworkAcknowledged   types.Bool          `tfsdk:"no_network_acknowledged"`
-	FirewallRulesCreate     types.Bool          `tfsdk:"firewall_rules_create"`
-	FirewallRulesSetName    types.String        `tfsdk:"firewall_rules_set_name"`
-	FirewallRules           []firewallRuleModel `tfsdk:"firewall_rules"`
-	DestroyFirewallRulesSet types.Bool          `tfsdk:"destroy_firewall_rules_set"`
-	FirewallRulesSetID      types.String        `tfsdk:"firewall_rules_set_id"`
-	ExtraVolumeProduct      types.String        `tfsdk:"extra_volume_product"`
-	ExtraVolumeAlias        types.String        `tfsdk:"extra_volume_alias"`
-	ExtraVolumeSize         types.Int64         `tfsdk:"extra_volume_size"`
-	DestroyExtraVolume      types.Bool          `tfsdk:"destroy_extra_volume"`
-	ExtraVolumeID           types.String        `tfsdk:"extra_volume_id"`
-	WaitForReadySeconds     types.Int64         `tfsdk:"wait_for_ready_seconds"`
-	Status                  types.String        `tfsdk:"status"`
-}
-
-type firewallRuleModel struct {
-	Direction   types.String `tfsdk:"direction"`
-	Action      types.String `tfsdk:"action"`
-	Protocol    types.String `tfsdk:"protocol"`
-	Source      types.String `tfsdk:"source"`
-	Sport       types.String `tfsdk:"sport"`
-	Destination types.String `tfsdk:"destination"`
-	Dport       types.String `tfsdk:"dport"`
-	Enabled     types.Bool   `tfsdk:"enabled"`
-	Position    types.String `tfsdk:"position"`
-}
-
-func (r *serverResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+func (r *serverResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_server"
 }
 
-func (r *serverResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	createOnly := func(desc string) schema.StringAttribute {
+		return schema.StringAttribute{
+			Optional:      true,
+			Description:   desc + " Changing it replaces the server.",
+			PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
+		}
+	}
+	createOnlyBool := func(desc string) schema.BoolAttribute {
+		return schema.BoolAttribute{
+			Optional:      true,
+			Description:   desc + " Changing it replaces the server.",
+			PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+		}
+	}
+	computedString := func(desc string) schema.StringAttribute {
+		return schema.StringAttribute{
+			Computed:    true,
+			Description: desc,
+		}
+	}
+	computedInt := func(desc string) schema.Int64Attribute {
+		return schema.Int64Attribute{
+			Computed:    true,
+			Description: desc,
+		}
+	}
+	policy := func(direction string) schema.StringAttribute {
+		return schema.StringAttribute{
+			Optional:      true,
+			Computed:      true,
+			Description:   "Default firewall policy for " + direction + " traffic: ACCEPT, DROP or REJECT.",
+			Validators:    []validator.String{stringvalidator.OneOf("ACCEPT", "DROP", "REJECT")},
+			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+		}
+	}
+
 	resp.Schema = schema.Schema{
-		Description: "Manages a PidginHost server.",
+		Version:     1,
+		Description: "A cloud server.",
 		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
+			"id": idAttribute(),
+			"hostname": schema.StringAttribute{
+				Optional:    true,
 				Computed:    true,
-				Description: "Unique identifier of the server.",
+				Description: "Hostname. The API picks one when left empty. Changing it replaces the server.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"image": schema.StringAttribute{
-				Required:    true,
-				Description: "Image identifier or slug.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
+				Required:      true,
+				Description:   "Operating system image slug, from the pidginhost_images data source. Changing it replaces the server.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"package": schema.StringAttribute{
-				Required:    true,
-				Description: "Package identifier or slug.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
+				Required: true,
+				Description: "Server package slug, from the pidginhost_packages data source. Changing it resizes the " +
+					"server in place; the API refuses packages with a smaller disk.",
+				Validators: []validator.String{notNumeric("package slug")},
 			},
-			"hostname": schema.StringAttribute{
-				Required:    true,
-				Description: "Hostname assigned to the server.",
+			"generation": schema.StringAttribute{
+				Optional:    true,
+				Computed:    true,
+				Description: "Hardware generation slug. The API picks the default when left empty. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"project": schema.StringAttribute{
-				Optional:    true,
-				Description: "Optional project label.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
+				Optional:      true,
+				Computed:      true,
+				Description:   "Project label.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"password": schema.StringAttribute{
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Root/administrator password.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
+				Optional:  true,
+				Sensitive: true,
+				Description: "Password for the default user. Changing it resets the password through cloud-init. " +
+					"Unavailable on servers with a custom OS.",
 			},
 			"ssh_pub_key": schema.StringAttribute{
-				Optional:    true,
-				Sensitive:   true,
-				Description: "SSH public key material.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
+				Optional: true,
+				Computed: true,
+				Description: "Public key installed for SSH login. Changing it regenerates cloud-init and reboots a " +
+					"running server. An empty string removes it from future cloud-init data but does not revoke keys " +
+					"already in the guest.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"ssh_pub_key_id": schema.StringAttribute{
-				Optional:    true,
-				Description: "Identifier of an existing SSH key.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
+			"ssh_pub_key_id": createOnly("Id or fingerprint of an SSH key stored on the account, installed at creation."),
+			"user_data": schema.StringAttribute{
+				Optional:  true,
+				Sensitive: true,
+				Description: "Startup script run on first boot: an executable script with a shebang. The API stores " +
+					"it in cleartext. Changing it replaces the server.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
-			"public_ip": schema.StringAttribute{
+			"public_ip":               createOnly("Id or address of an IPv4 address on the account to attach at creation."),
+			"new_ipv4":                createOnlyBool("Allocate a new IPv4 address and attach it before first boot."),
+			"public_ipv6":             createOnly("Id or address of an IPv6 address on the account to attach at creation."),
+			"new_ipv6":                createOnlyBool("Allocate a new IPv6 address and attach it before first boot."),
+			"no_network_acknowledged": createOnlyBool("Confirm creating a server without a public address."),
+			"private_network":         createOnly("Id or address (CIDR) of a private network to join at creation."),
+			"private_address":         createOnly("Address in private_network. The API assigns one when left empty."),
+			"enable_ha": schema.BoolAttribute{
 				Optional:    true,
-				Description: "Existing public IPv4 to attach.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"new_ipv4": schema.BoolAttribute{
-				Optional:    true,
-				Description: "Request allocation of a new public IPv4.",
+				Computed:    true,
+				Description: "Restart and move the server automatically when its host fails. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
 					boolplanmodifier.RequiresReplace(),
-				},
-			},
-			"public_ipv6": schema.StringAttribute{
-				Optional:    true,
-				Description: "Existing public IPv6 to attach.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"new_ipv6": schema.BoolAttribute{
-				Optional:    true,
-				Description: "Request allocation of a new public IPv6.",
-				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
-					boolplanmodifier.RequiresReplace(),
 				},
 			},
+			"destroy_protection": schema.BoolAttribute{
+				Optional:      true,
+				Computed:      true,
+				Description:   "Refuse to delete the server while true. Set it to false and apply before destroying.",
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"fw_rules_set": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Description: "Name of the firewall rule set applied to the public interface, for example " +
+					"pidginhost_firewall.web.name. An empty string removes it. Some packages, such as the free tier, " +
+					"keep their own firewall.",
+				Validators:    []validator.String{notNumeric("rule set name")},
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"fw_policy_in":  policy("incoming"),
+			"fw_policy_out": policy("outgoing"),
 			"destroy_public_ipv4": schema.BoolAttribute{
 				Optional:    true,
 				Computed:    true,
-				Description: "When true the attached public IPv4 address is deleted during destroy; when false it is detached and kept.",
 				Default:     booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
+				Description: "Release the server's IPv4 addresses when it is destroyed. When false they stay on the account, unattached and billed.",
 			},
 			"destroy_public_ipv6": schema.BoolAttribute{
 				Optional:    true,
 				Computed:    true,
-				Description: "When true the attached public IPv6 address is deleted during destroy; when false it is detached and kept.",
 				Default:     booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
+				Description: "Release the server's IPv6 addresses when it is destroyed. When false they stay on the account, unattached and billed.",
 			},
-			"fw_rules_set": schema.StringAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Firewall ruleset slug.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"fw_policy_in": schema.StringAttribute{
-				Optional:    true,
-				Description: "Firewall policy for inbound traffic.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"fw_policy_out": schema.StringAttribute{
-				Optional:    true,
-				Description: "Firewall policy for outbound traffic.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"private_network": schema.StringAttribute{
-				Optional:    true,
-				Description: "Private network identifier.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"private_address": schema.StringAttribute{
-				Optional:    true,
-				Description: "Static private IP when attaching a private network.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"firewall_rules_create": schema.BoolAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Set true to create a new firewall rules set for this server.",
-				Default:     booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-					boolplanmodifier.RequiresReplace(),
-				},
-			},
-			"firewall_rules_set_name": schema.StringAttribute{
-				Optional:    true,
-				Description: "Name of the firewall rules set to create or reference.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"firewall_rules": schema.ListNestedAttribute{
-				Optional:    true,
-				Description: "Optional list of firewall rules to add when creating a new rules set.",
-				PlanModifiers: []planmodifier.List{
-					listplanmodifier.RequiresReplace(),
-				},
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"direction": schema.StringAttribute{
-							Optional:    true,
-							Description: "Direction of traffic (in/out).",
-						},
-						"action": schema.StringAttribute{
-							Optional:    true,
-							Description: "Action to take (ACCEPT, DROP, REJECT).",
-						},
-						"protocol": schema.StringAttribute{
-							Optional:    true,
-							Description: "Protocol (tcp, udp, etc).",
-						},
-						"source": schema.StringAttribute{
-							Optional:    true,
-							Description: "Source CIDR.",
-						},
-						"sport": schema.StringAttribute{
-							Optional:    true,
-							Description: "Source port.",
-						},
-						"destination": schema.StringAttribute{
-							Optional:    true,
-							Description: "Destination CIDR.",
-						},
-						"dport": schema.StringAttribute{
-							Optional:    true,
-							Description: "Destination port.",
-						},
-						"enabled": schema.BoolAttribute{
-							Optional:    true,
-							Description: "Whether the rule is enabled.",
-						},
-						"position": schema.StringAttribute{
-							Optional:    true,
-							Description: "Rule position/order.",
-						},
-					},
-				},
-			},
-			"destroy_firewall_rules_set": schema.BoolAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "When true and the rules set was created by this resource, it will be deleted during destroy.",
-				Default:     booldefault.StaticBool(true),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-					boolplanmodifier.RequiresReplace(),
-				},
-			},
-			"firewall_rules_set_id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Identifier of the firewall rules set created or referenced.",
-			},
-			"extra_volume_product": schema.StringAttribute{
-				Optional:    true,
-				Description: "Optional extra volume product slug to provision alongside the server.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"extra_volume_alias": schema.StringAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Alias assigned to the optional extra volume (defaults to hostname-extra when omitted).",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"extra_volume_size": schema.Int64Attribute{
-				Optional:    true,
-				Description: "Size in GiB of the optional extra volume.",
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.UseStateForUnknown(),
-				},
-			},
-			"destroy_extra_volume": schema.BoolAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "When true (default) the extra volume is deleted during destroy; when false it is detached and kept.",
-				Default:     booldefault.StaticBool(true),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"extra_volume_id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Identifier of the optional extra volume.",
-			},
-			"no_network_acknowledged": schema.BoolAttribute{
-				Optional:    true,
-				Description: "Set true to confirm creation without a public network.",
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-					boolplanmodifier.RequiresReplace(),
-				},
-			},
-			"wait_for_ready_seconds": schema.Int64Attribute{
-				Optional:    true,
-				Description: "Maximum seconds to wait for the server to reach running state (defaults to 300).",
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.UseStateForUnknown(),
-				},
-			},
-			"status": schema.StringAttribute{
-				Computed:    true,
-				Description: "Current machine status reported by the API.",
-			},
+			"status":       computedString("Status reported by the API, for example active."),
+			"ipv4_address": computedString("Public IPv4 address, if any."),
+			"ipv6_address": computedString("Public IPv6 address, if any."),
+			"cpus":         computedInt("Number of virtual CPUs."),
+			"memory":       computedInt("Memory in GiB."),
+			"disk_size":    computedInt("Disk size in GiB."),
+			"username":     computedString("Default user for SSH login."),
+		},
+		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{Create: true, Update: true, Delete: true}),
 		},
 	}
 }
 
-func (r *serverResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected Provider Data Type", "Expected *Client for provider data")
-		return
-	}
-
-	r.client = client
+func (r *serverResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.client = clientFrom(req.ProviderData, &resp.Diagnostics)
 }
 
 func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	if r.client == nil {
-		resp.Diagnostics.AddError("Unconfigured Provider", "The provider must be configured before managing resources.")
-		return
-	}
-
-	var plan serverResourceModel
+	var plan serverModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	if !hasAuthentication(&plan) {
-		resp.Diagnostics.AddError(
-			"Missing Authentication Details",
-			"At least one of password, ssh_pub_key, or ssh_pub_key_id must be supplied to authenticate with the server.",
-		)
+	timeout, diags := plan.Timeouts.Create(ctx, 45*time.Minute)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
-	firewallRulesCreate := boolValue(plan.FirewallRulesCreate, false)
-	if !firewallRulesCreate && len(plan.FirewallRules) > 0 {
-		resp.Diagnostics.AddError(
-			"firewall_rules not supported",
-			"firewall_rules can only be specified when firewall_rules_create is true.",
-		)
-		return
+	body := pidginhost.NewServerAddRequest(plan.Image.ValueString(), plan.Package.ValueString())
+	body.Hostname = optionalString(plan.Hostname)
+	body.Generation = optionalString(plan.Generation)
+	body.Project = optionalString(plan.Project)
+	body.Password = optionalString(plan.Password)
+	body.SshPubKey = optionalString(plan.SSHPubKey)
+	body.SshPubKeyId = optionalString(plan.SSHPubKeyID)
+	body.UserData = optionalString(plan.UserData)
+	body.PublicIp = optionalString(plan.PublicIP)
+	body.NewIpv4 = optionalBool(plan.NewIPv4)
+	body.PublicIpv6 = optionalString(plan.PublicIPv6)
+	body.NewIpv6 = optionalBool(plan.NewIPv6)
+	body.NoNetworkAcknowledged = optionalBool(plan.NoNetworkAcknowledged)
+	body.PrivateNetwork = optionalString(plan.PrivateNetwork)
+	body.PrivateAddress = optionalString(plan.PrivateAddress)
+	body.EnableHa = optionalBool(plan.EnableHA)
+	if v := optionalString(plan.FwRulesSet); v != nil && *v != "" {
+		body.FwRulesSet = v
 	}
-	destroyFirewall := boolValue(plan.DestroyFirewallRulesSet, firewallRulesCreate)
-	plan.FirewallRulesCreate = types.BoolValue(firewallRulesCreate)
-	plan.DestroyFirewallRulesSet = types.BoolValue(destroyFirewall)
+	body.FwPolicyIn = policyValue(plan.FwPolicyIn)
+	body.FwPolicyOut = policyValue(plan.FwPolicyOut)
 
-	if firewallRulesCreate {
-		name := stringValue(plan.FirewallRulesSetName)
-		if name == "" {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("firewall_rules_set_name"),
-				"Missing Firewall Rules Set Name",
-				"When firewall_rules_create is true you must provide firewall_rules_set_name.",
-			)
-			return
-		}
-
-		firewall, err := r.client.API.CreateFirewallRulesSet(ctx, name)
-		if err != nil {
-			resp.Diagnostics.AddError("Error creating firewall rules set", err.Error())
-			return
-		}
-
-		firewallID := stringFromAny(firewall["id"])
-		firewallSlug := stringFromAny(firewall["slug"])
-		if firewallSlug == "" {
-			firewallSlug = name
-		}
-
-		plan.FirewallRulesSetID = types.StringValue(firewallID)
-		plan.FwRulesSet = types.StringValue(firewallSlug)
-
-		for idx, ruleModel := range plan.FirewallRules {
-			ruleBody, diags := expandFirewallRule(ruleModel, idx)
-			resp.Diagnostics.Append(diags...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			if len(ruleBody) == 0 {
-				continue
-			}
-			if err := r.client.API.AddFirewallRule(ctx, firewallID, ruleBody); err != nil {
-				resp.Diagnostics.AddError("Error adding firewall rule", err.Error())
-				return
-			}
-		}
-	} else {
-		slug := stringValue(plan.FwRulesSet)
-		identifier := stringValue(plan.FirewallRulesSetName)
-
-		switch {
-		case slug != "":
-			firewall, err := r.client.API.FindFirewall(ctx, slug)
-			if err != nil {
-				if !errors.Is(err, errNotFound) {
-					resp.Diagnostics.AddError("Firewall rules set not found", err.Error())
-					return
-				}
-				resp.Diagnostics.AddAttributeError(
-					path.Root("fw_rules_set"),
-					"Firewall Rules Set Not Found",
-					fmt.Sprintf("Firewall rules set %q does not exist. Set firewall_rules_create = true to create it or provide an existing slug.", slug),
-				)
-				return
-			}
-			firewallID := stringFromAny(firewall["id"])
-			firewallSlug := stringFromAny(firewall["slug"])
-			if firewallSlug == "" {
-				firewallSlug = slug
-			}
-			plan.FirewallRulesSetID = types.StringValue(firewallID)
-			plan.FwRulesSet = types.StringValue(firewallSlug)
-		case identifier != "":
-			firewall, err := r.client.API.FindFirewall(ctx, identifier)
-			if err != nil {
-				if !errors.Is(err, errNotFound) {
-					resp.Diagnostics.AddError("Firewall rules set not found", err.Error())
-					return
-				}
-				resp.Diagnostics.AddAttributeError(
-					path.Root("firewall_rules_set_name"),
-					"Firewall Rules Set Not Found",
-					fmt.Sprintf("Firewall rules set %q does not exist. Set firewall_rules_create = true to create it or provide an existing name/slug.", identifier),
-				)
-				return
-			}
-			firewallID := stringFromAny(firewall["id"])
-			firewallSlug := stringFromAny(firewall["slug"])
-			if firewallSlug == "" {
-				firewallSlug = identifier
-			}
-			plan.FirewallRulesSetID = types.StringValue(firewallID)
-			plan.FwRulesSet = types.StringValue(firewallSlug)
-		default:
-			plan.FirewallRulesSetID = types.StringNull()
-			plan.FwRulesSet = types.StringNull()
-		}
-	}
-
-	wantsExtraVolume := !plan.ExtraVolumeProduct.IsNull() && !plan.ExtraVolumeProduct.IsUnknown()
-	if wantsExtraVolume {
-		if plan.ExtraVolumeSize.IsNull() || plan.ExtraVolumeSize.IsUnknown() {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("extra_volume_size"),
-				"Missing Extra Volume Size",
-				"When extra_volume_product is set you must also provide extra_volume_size.",
-			)
-			return
-		}
-		if plan.ExtraVolumeSize.ValueInt64() <= 0 {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("extra_volume_size"),
-				"Invalid Extra Volume Size",
-				"extra_volume_size must be greater than zero.",
-			)
-			return
-		}
-	}
-
-	var fwRulesSetPtr *string
-	if firewallRulesCreate || !plan.FirewallRulesSetID.IsNull() {
-		fwRulesSetPtr = stringPointer(plan.FwRulesSet)
-	}
-
-	createRequest := ServerCreateRequest{
-		Image:    plan.Image.ValueString(),
-		Package:  plan.Package.ValueString(),
-		Hostname: plan.Hostname.ValueString(),
-		Project:  stringPointer(plan.Project),
-		Password: stringPointer(plan.Password),
-		SSHPubKey: func() *string {
-			if plan.SSHPubKey.IsNull() || plan.SSHPubKey.IsUnknown() {
-				return nil
-			}
-			value := plan.SSHPubKey.ValueString()
-			return &value
-		}(),
-		SSHPubKeyID:           stringPointer(plan.SSHPubKeyID),
-		PublicIP:              stringPointer(plan.PublicIP),
-		NewIPv4:               boolPointer(plan.NewIPv4),
-		PublicIPv6:            stringPointer(plan.PublicIPv6),
-		NewIPv6:               boolPointer(plan.NewIPv6),
-		FwRulesSet:            fwRulesSetPtr,
-		FwPolicyIn:            stringPointer(plan.FwPolicyIn),
-		FwPolicyOut:           stringPointer(plan.FwPolicyOut),
-		PrivateNetwork:        stringPointer(plan.PrivateNetwork),
-		PrivateAddress:        stringPointer(plan.PrivateAddress),
-		NoNetworkAcknowledged: boolPointer(plan.NoNetworkAcknowledged),
-	}
-
-	server, err := r.client.API.CreateServer(ctx, createRequest)
+	created, _, err := r.client.CloudAPI.CloudServersCreate(ctx).ServerAddRequest(*body).Execute()
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating server", err.Error())
+		resp.Diagnostics.Append(apiError("Creating server", err))
+		return
+	}
+	// Saved before waiting: a server that fails to provision is still billed,
+	// and Terraform must know it exists to replace or destroy it.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), strconv.Itoa(int(created.Id)))...)
+
+	server, err := r.waitUntilActive(ctx, created.Id, nil)
+	if err != nil {
+		resp.Diagnostics.AddError("Waiting for the server to become active", err.Error())
 		return
 	}
 
-	waitSeconds := getWaitSeconds(plan.WaitForReadySeconds)
-	readyServer := server
-	if waitSeconds > 0 {
-		waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-		defer cancel()
-
-		readyServer, err = r.client.API.WaitForServerReady(waitCtx, server.IDString(), 5*time.Second)
-		if err != nil {
-			resp.Diagnostics.AddError("Error waiting for server readiness", err.Error())
+	if plan.DestroyProtection.ValueBool() {
+		if err := r.setDestroyProtection(ctx, created.Id, true); err != nil {
+			resp.Diagnostics.Append(apiError("Enabling destroy protection", err))
 			return
 		}
+		server.DestroyProtection = true
 	}
 
-	plan.ID = types.StringValue(readyServer.IDString())
-	plan.Status = types.StringValue(readyServer.EffectiveStatus())
-
-	if wantsExtraVolume {
-		extraAlias := plan.ExtraVolumeAlias.ValueString()
-		if extraAlias == "" {
-			extraAlias = fmt.Sprintf("%s-extra", plan.Hostname.ValueString())
-		}
-
-		volumeReq := VolumeCreateRequest{
-			Alias:   extraAlias,
-			Size:    plan.ExtraVolumeSize.ValueInt64(),
-			Product: plan.ExtraVolumeProduct.ValueString(),
-			Project: stringPointer(plan.Project),
-		}
-
-		volume, volErr := r.client.API.CreateServerVolume(ctx, plan.ID.ValueString(), volumeReq)
-		if volErr != nil {
-			resp.Diagnostics.AddError("Error creating extra volume", volErr.Error())
-			return
-		}
-
-		plan.ExtraVolumeAlias = types.StringValue(volume.Alias)
-		plan.ExtraVolumeID = types.StringValue(volume.IDString())
-	} else {
-		plan.ExtraVolumeAlias = types.StringNull()
-		plan.ExtraVolumeID = types.StringNull()
-	}
-
-	plan.DestroyExtraVolume = types.BoolValue(boolValue(plan.DestroyExtraVolume, true))
-	plan.DestroyPublicIPv4 = types.BoolValue(boolValue(plan.DestroyPublicIPv4, false))
-	plan.DestroyPublicIPv6 = types.BoolValue(boolValue(plan.DestroyPublicIPv6, false))
-
+	resp.Diagnostics.Append(r.refresh(ctx, &plan, server)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *serverResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	if r.client == nil {
-		resp.Diagnostics.AddError("Unconfigured Provider", "The provider must be configured before managing resources.")
-		return
-	}
-
-	var state serverResourceModel
+	var state serverModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	server, err := r.client.API.GetServer(ctx, state.ID.ValueString())
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
-		if errors.Is(err, errNotFound) {
-			resp.State.RemoveResource(ctx)
-			return
-		}
-		resp.Diagnostics.AddError("Error reading server", err.Error())
+		resp.Diagnostics.AddError("Invalid server id", err.Error())
 		return
 	}
-
-	state.Status = types.StringValue(server.EffectiveStatus())
-
-	if !state.ExtraVolumeID.IsNull() && state.ExtraVolumeID.ValueString() != "" {
-		volume, err := r.client.API.GetVolume(ctx, state.ExtraVolumeID.ValueString())
-		if err != nil {
-			if errors.Is(err, errNotFound) {
-				state.ExtraVolumeID = types.StringNull()
-				state.ExtraVolumeAlias = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("Error reading extra volume", err.Error())
-				return
-			}
-		} else {
-			state.ExtraVolumeAlias = types.StringValue(volume.Alias)
-			state.ExtraVolumeID = types.StringValue(volume.IDString())
-		}
+	server, httpResp, err := r.client.CloudAPI.CloudServersRetrieve(ctx, id).Execute()
+	if isNotFound(httpResp, err) || err == nil && isGone(string(server.Status)) {
+		resp.State.RemoveResource(ctx)
+		return
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Reading server", err))
+		return
+	}
+	resp.Diagnostics.Append(r.refresh(ctx, &state, server)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *serverResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	if r.client == nil {
-		resp.Diagnostics.AddError("Unconfigured Provider", "The provider must be configured before managing resources.")
-		return
-	}
-
-	var plan serverResourceModel
+	var plan, state serverModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	var state serverResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	serverID := state.ID.ValueString()
-	if serverID == "" {
-		resp.Diagnostics.AddError("Missing Server Identifier", "State did not contain a server id to update.")
+	timeout, diags := plan.Timeouts.Update(ctx, 45*time.Minute)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	waitSeconds := getWaitSeconds(plan.WaitForReadySeconds)
-	destroyExtraVolume := boolValue(plan.DestroyExtraVolume, boolValue(state.DestroyExtraVolume, true))
-	destroyPublicIPv4 := boolValue(plan.DestroyPublicIPv4, boolValue(state.DestroyPublicIPv4, false))
-	destroyPublicIPv6 := boolValue(plan.DestroyPublicIPv6, boolValue(state.DestroyPublicIPv6, false))
-
-	plan.ID = types.StringValue(serverID)
-	if plan.FirewallRulesSetID.IsNull() || plan.FirewallRulesSetID.IsUnknown() {
-		plan.FirewallRulesSetID = state.FirewallRulesSetID
-	}
-	if plan.FwRulesSet.IsNull() || plan.FwRulesSet.IsUnknown() {
-		plan.FwRulesSet = state.FwRulesSet
-	}
-	if plan.FirewallRulesSetName.IsNull() || plan.FirewallRulesSetName.IsUnknown() {
-		plan.FirewallRulesSetName = state.FirewallRulesSetName
-	}
-	if plan.FirewallRulesCreate.IsNull() || plan.FirewallRulesCreate.IsUnknown() {
-		plan.FirewallRulesCreate = state.FirewallRulesCreate
-	}
-	if plan.DestroyFirewallRulesSet.IsNull() || plan.DestroyFirewallRulesSet.IsUnknown() {
-		plan.DestroyFirewallRulesSet = state.DestroyFirewallRulesSet
-	}
-
-	detachVolume := func(volumeID, alias string) error {
-		if volumeID == "" {
-			return nil
-		}
-
-		if err := r.client.API.DetachVolume(ctx, volumeID, alias); err != nil && !errors.Is(err, errNotFound) {
-			return err
-		}
-
-		if waitSeconds > 0 {
-			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-			defer cancel()
-
-			if err := r.client.API.WaitForVolumeDetached(waitCtx, volumeID, 5*time.Second); err != nil && !errors.Is(err, errNotFound) {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	deleteVolume := func(volumeID string) error {
-		if volumeID == "" {
-			return nil
-		}
-
-		if err := r.client.API.DeleteVolume(ctx, volumeID); err != nil && !errors.Is(err, errNotFound) {
-			return err
-		}
-
-		if waitSeconds > 0 {
-			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-			defer cancel()
-
-			if err := r.client.API.WaitForVolumeDeletion(waitCtx, volumeID, 5*time.Second); err != nil && !errors.Is(err, errNotFound) {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	stateVolumeID := state.ExtraVolumeID.ValueString()
-	stateVolumeAlias := state.ExtraVolumeAlias.ValueString()
-
-	wantsExtraVolume := !plan.ExtraVolumeProduct.IsNull() && !plan.ExtraVolumeProduct.IsUnknown()
-
-	var existingVolume *Volume
-	if stateVolumeID != "" {
-		volume, err := r.client.API.GetVolume(ctx, stateVolumeID)
-		if err != nil {
-			if !errors.Is(err, errNotFound) {
-				resp.Diagnostics.AddError("Error reading extra volume", err.Error())
-				return
-			}
-		} else {
-			existingVolume = volume
-		}
-	}
-
-	if wantsExtraVolume {
-		if plan.ExtraVolumeSize.IsNull() || plan.ExtraVolumeSize.IsUnknown() {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("extra_volume_size"),
-				"Missing Extra Volume Size",
-				"When extra_volume_product is set you must also provide extra_volume_size.",
-			)
-			return
-		}
-		if plan.ExtraVolumeSize.ValueInt64() <= 0 {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("extra_volume_size"),
-				"Invalid Extra Volume Size",
-				"extra_volume_size must be greater than zero.",
-			)
-			return
-		}
-
-		desiredAlias := plan.ExtraVolumeAlias.ValueString()
-		if plan.ExtraVolumeAlias.IsNull() || plan.ExtraVolumeAlias.IsUnknown() || desiredAlias == "" {
-			desiredAlias = fmt.Sprintf("%s-extra", plan.Hostname.ValueString())
-		}
-		desiredProduct := plan.ExtraVolumeProduct.ValueString()
-		if desiredProduct == "" {
-			resp.Diagnostics.AddAttributeError(
-				path.Root("extra_volume_product"),
-				"Missing Extra Volume Product",
-				"When extra_volume_product is set you must provide a storage product slug.",
-			)
-			return
-		}
-		desiredSize := plan.ExtraVolumeSize.ValueInt64()
-
-		if existingVolume != nil {
-			currentSize, err := existingVolume.Size.Int64()
-			if err != nil {
-				resp.Diagnostics.AddError("Error parsing extra volume size", err.Error())
-				return
-			}
-
-			needRecreate := existingVolume.Product != desiredProduct
-			updatePayload := VolumeUpdateRequest{}
-			needsUpdate := false
-
-			if existingVolume.Alias != desiredAlias {
-				updatePayload.Alias = &desiredAlias
-				needsUpdate = true
-			}
-			if currentSize != desiredSize {
-				updatePayload.Size = &desiredSize
-				needsUpdate = true
-			}
-
-			if needRecreate {
-				if err := detachVolume(existingVolume.IDString(), existingVolume.Alias); err != nil {
-					resp.Diagnostics.AddError("Error detaching extra volume", err.Error())
-					return
-				}
-				if err := deleteVolume(existingVolume.IDString()); err != nil {
-					resp.Diagnostics.AddError("Error deleting extra volume", err.Error())
-					return
-				}
-				existingVolume = nil
-			} else if needsUpdate {
-				updatedVolume, err := r.client.API.UpdateVolume(ctx, existingVolume.IDString(), updatePayload)
-				if err != nil {
-					resp.Diagnostics.AddError("Error updating extra volume", err.Error())
-					return
-				}
-				existingVolume = updatedVolume
-			}
-		}
-
-		if existingVolume == nil {
-			volumeReq := VolumeCreateRequest{
-				Alias:   desiredAlias,
-				Size:    desiredSize,
-				Product: desiredProduct,
-				Project: stringPointer(plan.Project),
-			}
-
-			volume, err := r.client.API.CreateServerVolume(ctx, serverID, volumeReq)
-			if err != nil {
-				resp.Diagnostics.AddError("Error creating extra volume", err.Error())
-				return
-			}
-
-			existingVolume = volume
-		}
-
-		if existingVolume != nil {
-			plan.ExtraVolumeAlias = types.StringValue(existingVolume.Alias)
-			plan.ExtraVolumeID = types.StringValue(existingVolume.IDString())
-		} else {
-			plan.ExtraVolumeAlias = types.StringValue(desiredAlias)
-			plan.ExtraVolumeID = types.StringNull()
-		}
-		plan.ExtraVolumeProduct = types.StringValue(desiredProduct)
-		plan.ExtraVolumeSize = types.Int64Value(desiredSize)
-	} else {
-		if existingVolume != nil {
-			alias := existingVolume.Alias
-			if alias == "" {
-				alias = stateVolumeAlias
-			}
-
-			if err := detachVolume(existingVolume.IDString(), alias); err != nil {
-				resp.Diagnostics.AddError("Error detaching extra volume", err.Error())
-				return
-			}
-
-			if destroyExtraVolume {
-				if err := deleteVolume(existingVolume.IDString()); err != nil {
-					resp.Diagnostics.AddError("Error deleting extra volume", err.Error())
-					return
-				}
-			}
-		}
-
-		plan.ExtraVolumeAlias = types.StringNull()
-		plan.ExtraVolumeID = types.StringNull()
-		plan.ExtraVolumeSize = types.Int64Null()
-		plan.ExtraVolumeProduct = types.StringNull()
-	}
-
-	plan.DestroyExtraVolume = types.BoolValue(destroyExtraVolume)
-	plan.DestroyPublicIPv4 = types.BoolValue(destroyPublicIPv4)
-	plan.DestroyPublicIPv6 = types.BoolValue(destroyPublicIPv6)
-
-	server, err := r.client.API.GetServer(ctx, serverID)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	id, err := parseID(state.ID.ValueString())
 	if err != nil {
-		if errors.Is(err, errNotFound) {
-			resp.State.RemoveResource(ctx)
-			return
-		}
-		resp.Diagnostics.AddError("Error reading server", err.Error())
+		resp.Diagnostics.AddError("Invalid server id", err.Error())
 		return
 	}
 
-	plan.Status = types.StringValue(server.EffectiveStatus())
+	if pkg := plan.Package.ValueString(); pkg != state.Package.ValueString() {
+		_, _, err := r.client.CloudAPI.CloudServersModifyPackageCreate(ctx, id).
+			ServerProductUpgradeRequest(*pidginhost.NewServerProductUpgradeRequest(pkg)).Execute()
+		if err != nil {
+			resp.Diagnostics.Append(apiError("Changing the server package", err))
+			return
+		}
+		// The server goes through upgrading and back to active.
+		_, err = r.waitUntilActive(ctx, id, func(s *pidginhost.ServerDetail) bool { return s.Package == pkg })
+		if err != nil {
+			resp.Diagnostics.AddError("Waiting for the package change", err.Error())
+			return
+		}
+	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	patch := pidginhost.PatchedServerDetailRequest{}
+	changed := false
+	if !plan.Project.IsUnknown() && !plan.Project.Equal(state.Project) {
+		patch.Project, changed = optionalString(plan.Project), true
+	}
+	if !plan.Password.IsNull() && !plan.Password.Equal(state.Password) {
+		patch.Password, changed = optionalString(plan.Password), true
+	}
+	if !plan.SSHPubKey.IsUnknown() && sshKeyBody(plan.SSHPubKey.ValueString()) != sshKeyBody(state.SSHPubKey.ValueString()) {
+		patch.SshPubKey, changed = optionalString(plan.SSHPubKey), true
+	}
+	if changed {
+		if _, _, err := r.client.CloudAPI.CloudServersPartialUpdate(ctx, id).PatchedServerDetailRequest(patch).Execute(); err != nil {
+			resp.Diagnostics.Append(apiError("Updating server", err))
+			return
+		}
+	}
+
+	if !plan.DestroyProtection.IsUnknown() && !plan.DestroyProtection.Equal(state.DestroyProtection) {
+		if err := r.setDestroyProtection(ctx, id, plan.DestroyProtection.ValueBool()); err != nil {
+			resp.Diagnostics.Append(apiError("Changing destroy protection", err))
+			return
+		}
+	}
+
+	if firewallChanged(plan, state) {
+		resp.Diagnostics.Append(r.applyFirewall(ctx, id, plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
+	server, _, err := r.client.CloudAPI.CloudServersRetrieve(ctx, id).Execute()
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Reading server", err))
+		return
+	}
+	resp.Diagnostics.Append(r.refresh(ctx, &plan, server)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *serverResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	if r.client == nil {
-		resp.Diagnostics.AddError("Unconfigured Provider", "The provider must be configured before managing resources.")
-		return
-	}
-
-	var state serverResourceModel
+	var state serverModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	waitSeconds := getWaitSeconds(state.WaitForReadySeconds)
-
-	destroyExtraVolume := boolValue(state.DestroyExtraVolume, true)
-	destroyFirewall := boolValue(state.DestroyFirewallRulesSet, boolValue(state.FirewallRulesCreate, false))
-	destroyPublicIPv4 := boolValue(state.DestroyPublicIPv4, false)
-	destroyPublicIPv6 := boolValue(state.DestroyPublicIPv6, false)
-	volumeID := ""
-	alias := ""
-	if !state.ExtraVolumeID.IsNull() && state.ExtraVolumeID.ValueString() != "" {
-		volumeID = state.ExtraVolumeID.ValueString()
-		alias = state.ExtraVolumeAlias.ValueString()
+	timeout, diags := state.Timeouts.Delete(ctx, 30*time.Minute)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	id, err := parseID(state.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid server id", err.Error())
+		return
 	}
 
-	firewallID := stringValue(state.FirewallRulesSetID)
-	firewallIdentifier := stringValue(state.FwRulesSet)
-	if firewallIdentifier == "" {
-		firewallIdentifier = stringValue(state.FirewallRulesSetName)
+	server, httpResp, err := r.client.CloudAPI.CloudServersRetrieve(ctx, id).Execute()
+	if isNotFound(httpResp, err) {
+		return
+	}
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Reading server", err))
+		return
+	}
+	if server.DestroyProtection {
+		resp.Diagnostics.AddError("Destroy protection is on",
+			fmt.Sprintf("Server %d has destroy_protection enabled. Set destroy_protection = false and apply before destroying it.", id))
+		return
 	}
 
-	serverID := state.ID.ValueString()
-	serverHostname := stringValue(state.Hostname)
+	addresses, err := r.boundAddresses(ctx, id, state.DestroyPublicIPv4.ValueBool(), state.DestroyPublicIPv6.ValueBool())
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Listing the server's public addresses", err))
+		return
+	}
 
-	cleanupPublicIPs := func(
-		listFn func(context.Context) ([]map[string]any, error),
-		detachFn func(context.Context, string) error,
-		deleteFn func(context.Context, string) error,
-		destroy bool,
-		label string,
-	) error {
-		records, err := listFn(ctx)
+	// A server already being cancelled is not deleted twice.
+	if status := string(server.Status); status != "cancelling" && status != "terminating" && !isGone(status) {
+		httpResp, err := r.client.CloudAPI.CloudServersDestroy(ctx, id).Execute()
+		if err != nil && !isNotFound(httpResp, err) {
+			resp.Diagnostics.Append(apiError("Deleting server", err))
+			return
+		}
+	}
+	err = waitFor(ctx, pollInterval, func() (bool, error) {
+		s, httpResp, err := r.client.CloudAPI.CloudServersRetrieve(ctx, id).Execute()
+		if isNotFound(httpResp, err) {
+			return true, nil
+		}
 		if err != nil {
-			if errors.Is(err, errNotFound) {
-				return nil
-			}
-			return fmt.Errorf("listing %s addresses: %w", label, err)
+			return false, err
 		}
-		for _, record := range records {
-			if attached, ok := record["attached"].(bool); ok && !attached {
-				continue
-			}
-
-			attachedTo := stringFromAny(record["server"])
-			switch {
-			case attachedTo == "":
-				continue
-			case serverID != "" && attachedTo == serverID:
-				// match
-			case serverHostname != "" && attachedTo == serverHostname:
-				// match
-			default:
-				continue
-			}
-
-			ipID := stringFromAny(record["id"])
-			if ipID == "" {
-				continue
-			}
-			address := stringFromAny(record["address"])
-
-			if err := detachFn(ctx, ipID); err != nil && !errors.Is(err, errNotFound) {
-				return fmt.Errorf("detaching %s address %s: %w", label, address, err)
-			}
-
-			if destroy {
-				if err := deleteFn(ctx, ipID); err != nil && !errors.Is(err, errNotFound) {
-					return fmt.Errorf("deleting %s address %s: %w", label, address, err)
-				}
-			}
-		}
-		return nil
-	}
-
-	if !destroyExtraVolume && volumeID != "" {
-		if err := r.client.API.DetachVolume(ctx, volumeID, alias); err != nil && !errors.Is(err, errNotFound) {
-			resp.Diagnostics.AddError("Error detaching extra volume", err.Error())
-			return
-		}
-
-		if waitSeconds > 0 {
-			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-			if err := r.client.API.WaitForVolumeDetached(waitCtx, volumeID, 5*time.Second); err != nil && !errors.Is(err, errNotFound) {
-				cancel()
-				resp.Diagnostics.AddError("Error waiting for extra volume detach", err.Error())
-				return
-			}
-			cancel()
-		}
-	}
-
-	if err := cleanupPublicIPs(
-		func(c context.Context) ([]map[string]any, error) { return r.client.API.ListIPs(c) },
-		func(c context.Context, id string) error { return r.client.API.DetachIPv4(c, id) },
-		func(c context.Context, id string) error { return r.client.API.DeleteIPv4(c, id) },
-		destroyPublicIPv4,
-		"IPv4",
-	); err != nil {
-		resp.Diagnostics.AddError("Error cleaning up IPv4 addresses", err.Error())
+		return isGone(string(s.Status)), nil
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Waiting for the server to be deleted", describeError(err))
 		return
 	}
 
-	if err := cleanupPublicIPs(
-		func(c context.Context) ([]map[string]any, error) { return r.client.API.ListIPv6(c) },
-		func(c context.Context, id string) error { return r.client.API.DetachIPv6(c, id) },
-		func(c context.Context, id string) error { return r.client.API.DeleteIPv6(c, id) },
-		destroyPublicIPv6,
-		"IPv6",
-	); err != nil {
-		resp.Diagnostics.AddError("Error cleaning up IPv6 addresses", err.Error())
-		return
-	}
-
-	if err := r.client.API.DeleteServer(ctx, state.ID.ValueString()); err != nil {
-		if !errors.Is(err, errNotFound) {
-			resp.Diagnostics.AddError("Error deleting server", err.Error())
-			return
-		}
-	} else if waitSeconds > 0 {
-		waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-		defer cancel()
-		if err := r.client.API.WaitForServerDeletion(waitCtx, state.ID.ValueString(), 5*time.Second); err != nil && !errors.Is(err, errNotFound) {
-			resp.Diagnostics.AddError("Error waiting for server deletion", err.Error())
-			return
+	// The server is gone, so failing here would only leave a state entry that
+	// no longer knows these addresses. Warn instead, naming them.
+	for _, address := range addresses {
+		if err := address.release(ctx, r.client); err != nil {
+			resp.Diagnostics.AddWarning("Public address "+address.address+" was not released",
+				"The server is deleted but this address is still on the account and billed. Release it in the panel "+
+					"or import it as pidginhost_public_ip and destroy it. Cause: "+describeError(err))
 		}
 	}
-
-	if destroyExtraVolume && volumeID != "" {
-		if err := r.client.API.DeleteVolume(ctx, volumeID); err != nil && !errors.Is(err, errNotFound) {
-			resp.Diagnostics.AddError("Error deleting extra volume", err.Error())
-			return
-		}
-
-		if waitSeconds > 0 {
-			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitSeconds)*time.Second)
-			if err := r.client.API.WaitForVolumeDeletion(waitCtx, volumeID, 5*time.Second); err != nil && !errors.Is(err, errNotFound) {
-				cancel()
-				resp.Diagnostics.AddError("Error waiting for extra volume deletion", err.Error())
-				return
-			}
-			cancel()
-		}
-	}
-
-	if destroyFirewall {
-		if firewallID == "" && firewallIdentifier != "" {
-			firewall, err := r.client.API.FindFirewall(ctx, firewallIdentifier)
-			if err != nil && !errors.Is(err, errNotFound) {
-				resp.Diagnostics.AddError("Error locating firewall rules set", err.Error())
-				return
-			}
-			if err == nil {
-				firewallID = stringFromAny(firewall["id"])
-			}
-		}
-
-		if firewallID != "" {
-			if err := r.client.API.DeleteFirewallRulesSet(ctx, firewallID); err != nil && !errors.Is(err, errNotFound) {
-				resp.Diagnostics.AddError("Error deleting firewall rules set", err.Error())
-				return
-			}
-		}
-	}
-
-	resp.State.RemoveResource(ctx)
 }
 
 func (r *serverResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func stringPointer(value types.String) *string {
-	if value.IsNull() || value.IsUnknown() {
+// waitUntilActive polls a server until it is active and done() agrees. New
+// servers answer 404 while pending, then move through provisioning to
+// active or failed.
+func (r *serverResource) waitUntilActive(ctx context.Context, id int32, done func(*pidginhost.ServerDetail) bool) (*pidginhost.ServerDetail, error) {
+	var server *pidginhost.ServerDetail
+	err := waitFor(ctx, pollInterval, func() (bool, error) {
+		s, httpResp, err := r.client.CloudAPI.CloudServersRetrieve(ctx, id).Execute()
+		if isNotFound(httpResp, err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		server = s
+		switch s.Status {
+		case "failed":
+			return false, fmt.Errorf("server %d failed to provision", id)
+		case "cancelling", "cancelled", "terminating", "terminated":
+			return false, fmt.Errorf("server %d cannot become active: status is %s", id, s.Status)
+		case "active":
+			return done == nil || done(s), nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s", describeError(err))
+	}
+	return server, nil
+}
+
+func (r *serverResource) setDestroyProtection(ctx context.Context, id int32, on bool) error {
+	applied, _, err := r.client.CloudAPI.CloudServersDestroyProtectionCreate(ctx, id).
+		DestroyProtectionRequest(*pidginhost.NewDestroyProtectionRequest(on)).Execute()
+	if err != nil {
+		return err
+	}
+	if applied.DestroyProtection != on {
+		return fmt.Errorf("the API did not apply destroy_protection = %t for server %d", on, id)
+	}
+	return nil
+}
+
+func firewallChanged(plan, state serverModel) bool {
+	changed := func(a, b types.String) bool { return !a.IsUnknown() && !a.Equal(b) }
+	return changed(plan.FwRulesSet, state.FwRulesSet) || changed(plan.FwPolicyIn, state.FwPolicyIn) ||
+		changed(plan.FwPolicyOut, state.FwPolicyOut)
+}
+
+// applyFirewall sends all three public interface settings, keeping the
+// current value of any that is not configured.
+func (r *serverResource) applyFirewall(ctx context.Context, id int32, plan serverModel) (diags diag.Diagnostics) {
+	current, _, err := r.client.CloudAPI.CloudServersPublicInterfaceRetrieve(ctx, id).Execute()
+	if err != nil {
+		diags.Append(apiError("Reading the public interface (a server without a public address has no firewall)", err))
+		return diags
+	}
+	body := pidginhost.PublicInterfaceRequest{FwPolicyIn: current.FwPolicyIn, FwPolicyOut: current.FwPolicyOut}
+	body.FwRulesSet = current.FwRulesSet
+	if !plan.FwRulesSet.IsUnknown() {
+		if name := plan.FwRulesSet.ValueString(); name == "" {
+			body.SetFwRulesSetNil()
+		} else {
+			body.SetFwRulesSet(name)
+		}
+	}
+	if v := policyValue(plan.FwPolicyIn); v != nil {
+		body.FwPolicyIn = v
+	}
+	if v := policyValue(plan.FwPolicyOut); v != nil {
+		body.FwPolicyOut = v
+	}
+	applied, _, err := r.client.CloudAPI.CloudServersPublicInterfaceCreate(ctx, id).PublicInterfaceRequest(body).Execute()
+	if err != nil {
+		diags.Append(apiError("Updating the server firewall", err))
+		return diags
+	}
+	// Some packages, such as the free tier, lock the firewall: the API
+	// answers but keeps its own values.
+	if applied.GetFwRulesSet() != body.GetFwRulesSet() || applied.GetFwPolicyIn() != body.GetFwPolicyIn() ||
+		applied.GetFwPolicyOut() != body.GetFwPolicyOut() {
+		diags.AddError("Firewall settings were not applied",
+			"The API kept its own firewall settings for this server. Packages such as the free tier do not allow changing them.")
+	}
+	return diags
+}
+
+// refresh copies the API's view of a server into the model, keeping the
+// configured spelling where the API stores the same value differently.
+func (r *serverResource) refresh(ctx context.Context, m *serverModel, s *pidginhost.ServerDetail) (diags diag.Diagnostics) {
+	m.ID = types.StringValue(strconv.Itoa(int(s.Id)))
+	m.Hostname = types.StringValue(s.Hostname)
+	if m.Image.IsNull() || m.Image.IsUnknown() {
+		m.Image = types.StringValue(s.Image)
+	}
+	m.Package = types.StringValue(s.Package)
+	m.Generation = types.StringValue(s.Generation)
+	m.Project = types.StringValue(s.GetProject())
+	if m.SSHPubKey.IsNull() || m.SSHPubKey.IsUnknown() || sshKeyBody(m.SSHPubKey.ValueString()) != sshKeyBody(s.GetSshPubKey()) {
+		m.SSHPubKey = types.StringValue(s.GetSshPubKey())
+	}
+	m.EnableHA = types.BoolValue(s.HaEnabled)
+	m.DestroyProtection = types.BoolValue(s.DestroyProtection)
+	m.Status = types.StringValue(string(s.Status))
+	m.IPv4Address = types.StringValue(s.Networks.Public.GetIpv4())
+	m.IPv6Address = types.StringValue(s.Networks.Public.GetIpv6())
+	m.CPUs = types.Int64Value(int64(s.Cpus))
+	m.Memory = types.Int64Value(int64(s.Memory))
+	m.DiskSize = types.Int64Value(int64(s.DiskSize))
+	m.Username = types.StringValue(s.Username)
+	if m.DestroyPublicIPv4.IsNull() || m.DestroyPublicIPv4.IsUnknown() {
+		m.DestroyPublicIPv4 = types.BoolValue(false)
+	}
+	if m.DestroyPublicIPv6.IsNull() || m.DestroyPublicIPv6.IsUnknown() {
+		m.DestroyPublicIPv6 = types.BoolValue(false)
+	}
+
+	iface, httpResp, err := r.client.CloudAPI.CloudServersPublicInterfaceRetrieve(ctx, s.Id).Execute()
+	switch {
+	case isNotFound(httpResp, err):
+		// No public address, so no firewall.
+		m.FwRulesSet = types.StringValue("")
+		m.FwPolicyIn = types.StringNull()
+		m.FwPolicyOut = types.StringNull()
+	case err != nil:
+		diags.Append(apiError("Reading the public interface", err))
+	default:
+		m.FwRulesSet = types.StringValue(iface.GetFwRulesSet())
+		m.FwPolicyIn = types.StringValue(string(iface.GetFwPolicyIn()))
+		m.FwPolicyOut = types.StringValue(string(iface.GetFwPolicyOut()))
+	}
+	return diags
+}
+
+func policyValue(v types.String) *pidginhost.FwPolicyOutEnum {
+	if v.IsNull() || v.IsUnknown() || v.ValueString() == "" {
 		return nil
 	}
-	v := value.ValueString()
-	return &v
+	p := pidginhost.FwPolicyOutEnum(v.ValueString())
+	return &p
 }
 
-func boolPointer(value types.Bool) *bool {
-	if value.IsNull() || value.IsUnknown() {
-		return nil
-	}
-	v := value.ValueBool()
-	return &v
+// isGone reports a status the API keeps for deleted objects.
+func isGone(status string) bool {
+	return status == "cancelled" || status == "terminated"
 }
 
-func boolValue(value types.Bool, defaultVal bool) bool {
-	if value.IsNull() || value.IsUnknown() {
-		return defaultVal
-	}
-	return value.ValueBool()
+// boundAddress is a public address to release after its server is gone.
+type boundAddress struct {
+	id      int32
+	v6      bool
+	address string
 }
 
-func stringValue(value types.String) string {
-	if value.IsNull() || value.IsUnknown() {
-		return ""
+func (r *serverResource) boundAddresses(ctx context.Context, serverID int32, v4, v6 bool) ([]boundAddress, error) {
+	var out []boundAddress
+	if v4 {
+		ips, err := fetchAll(func(page int32) ([]pidginhost.PublicIPv4, bool, error) {
+			list, _, err := r.client.CloudAPI.CloudIpv4List(ctx).Page(page).Execute()
+			if err != nil {
+				return nil, false, err
+			}
+			return list.Results, list.GetNext() != "", nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			if ip.ServerId.IsSet() && ip.ServerId.Get() != nil && *ip.ServerId.Get() == serverID {
+				out = append(out, boundAddress{id: ip.Id, address: ip.Address})
+			}
+		}
 	}
-	return value.ValueString()
+	if v6 {
+		ips, err := fetchAll(func(page int32) ([]pidginhost.PublicIPv6, bool, error) {
+			list, _, err := r.client.CloudAPI.CloudIpv6List(ctx).Page(page).Execute()
+			if err != nil {
+				return nil, false, err
+			}
+			return list.Results, list.GetNext() != "", nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			if ip.ServerId.IsSet() && ip.ServerId.Get() != nil && *ip.ServerId.Get() == serverID {
+				out = append(out, boundAddress{id: ip.Id, v6: true, address: ip.Address})
+			}
+		}
+	}
+	return out, nil
 }
 
-func hasAuthentication(plan *serverResourceModel) bool {
-	if plan == nil {
-		return false
-	}
-	return !(plan.Password.IsNull() || plan.Password.IsUnknown()) ||
-		!(plan.SSHPubKey.IsNull() || plan.SSHPubKey.IsUnknown()) ||
-		!(plan.SSHPubKeyID.IsNull() || plan.SSHPubKeyID.IsUnknown())
-}
-
-func getWaitSeconds(value types.Int64) int64 {
-	if value.IsNull() || value.IsUnknown() {
-		return 300
-	}
-	v := value.ValueInt64()
-	if v < 0 {
-		return 0
-	}
-	return v
-}
-
-func expandFirewallRule(rule firewallRuleModel, _ int) (map[string]any, diag.Diagnostics) {
-	body := make(map[string]any)
-
-	if value := stringValue(rule.Direction); value != "" {
-		body["direction"] = value
-	}
-	if value := stringValue(rule.Action); value != "" {
-		body["action"] = value
-	}
-	if value := stringValue(rule.Protocol); value != "" {
-		body["protocol"] = value
-	}
-	if value := stringValue(rule.Source); value != "" {
-		body["source"] = value
-	}
-	if value := stringValue(rule.Sport); value != "" {
-		body["sport"] = value
-	}
-	if value := stringValue(rule.Destination); value != "" {
-		body["destination"] = value
-	}
-	if value := stringValue(rule.Dport); value != "" {
-		body["dport"] = value
-	}
-	if !rule.Enabled.IsNull() && !rule.Enabled.IsUnknown() {
-		body["enabled"] = rule.Enabled.ValueBool()
-	}
-	if value := stringValue(rule.Position); value != "" {
-		body["position"] = value
-	}
-
-	return body, nil
+// release deletes an address once its deleted server let go of it.
+func (a boundAddress) release(ctx context.Context, client *pidginhost.APIClient) error {
+	return waitFor(ctx, pollInterval, func() (bool, error) {
+		var httpResp *http.Response
+		var err error
+		if a.v6 {
+			httpResp, err = client.CloudAPI.CloudIpv6Destroy(ctx, a.id).Execute()
+		} else {
+			httpResp, err = client.CloudAPI.CloudIpv4Destroy(ctx, a.id).Execute()
+		}
+		switch {
+		case err == nil, isNotFound(httpResp, err):
+			return true, nil
+		case httpResp != nil && (httpResp.StatusCode == http.StatusBadRequest || httpResp.StatusCode == http.StatusConflict):
+			// Still attached while the server's removal settles.
+			return false, nil
+		default:
+			return false, err
+		}
+	})
 }
