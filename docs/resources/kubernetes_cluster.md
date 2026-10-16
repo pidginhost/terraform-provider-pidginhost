@@ -48,7 +48,7 @@ resource "pidginhost_kubernetes_cluster" "example" {
 - `kube_version` (String) Kubernetes version, for example 1.35.7. The latest offered version when not set. Raising it upgrades the cluster one version at a time. Downgrades are not possible.
 - `name` (String) Cluster name. The API picks one when left empty.
 - `protected` (Boolean) Protect the cluster from deletion. To destroy a protected cluster, set it to false and apply first.
-- `resource_pool_size` (Number) Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created. This provider cannot resize pools; use the control panel.
+- `resource_pool_size` (Number) Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created; resize the pool with pidginhost_kubernetes_node_pool.
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
