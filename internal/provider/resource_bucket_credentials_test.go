@@ -159,3 +159,40 @@ func credentialsFrom(t *testing.T, get func(context.Context, any) diag.Diagnosti
 	}
 	return m
 }
+
+func TestBucketCredentialsErrorsNeverQuoteTheKeys(t *testing.T) {
+	// A 200 the SDK cannot decode (bucket missing) still carries live keys.
+	for _, tc := range []struct {
+		status int
+		body   string
+	}{
+		{http.StatusOK, `{"access_key":"AKIA-LEAK","secret_key":"s3cr3t-LEAK"}`},
+		{http.StatusBadRequest, `{"detail":"s3cr3t-LEAK"}`},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		ctx := context.Background()
+		r := &bucketCredentialsResource{client: newAPIClient("t", srv.URL, "test")}
+		var schemaResp resource.SchemaResponse
+		r.Schema(ctx, resource.SchemaRequest{}, &schemaResp)
+		plan := tfsdk.Plan{Schema: schemaResp.Schema}
+		mustSet(t, plan.Set(ctx, bucketCredentialsModel{
+			ID: types.StringUnknown(), BucketID: types.StringValue("5"), RotationTriggers: types.MapNull(types.StringType),
+			AccessKey: types.StringUnknown(), SecretKey: types.StringUnknown(),
+		}))
+		created := resource.CreateResponse{State: tfsdk.State{Schema: schemaResp.Schema}}
+		r.Create(ctx, resource.CreateRequest{Plan: plan}, &created)
+		srv.Close()
+		if !created.Diagnostics.HasError() {
+			t.Fatalf("status %d: expected an error", tc.status)
+		}
+		for _, d := range created.Diagnostics {
+			if strings.Contains(d.Summary()+d.Detail(), "LEAK") {
+				t.Fatalf("status %d: error quotes the response body: %s", tc.status, d.Detail())
+			}
+		}
+	}
+}

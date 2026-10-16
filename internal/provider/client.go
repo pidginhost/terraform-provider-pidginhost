@@ -121,6 +121,13 @@ func apiError(summary string, err error) diag.Diagnostic {
 	return diag.NewErrorDiagnostic(summary, describeError(err))
 }
 
+// secretRouteError is apiError for endpoints whose response body is itself a
+// secret: a body that failed to decode would otherwise quote the keys into
+// the Terraform output and logs. Only the status line is kept.
+func secretRouteError(summary string, err error) diag.Diagnostic {
+	return diag.NewErrorDiagnostic(summary, err.Error()+" (response body withheld: it can carry credentials)")
+}
+
 func describeError(err error) string {
 	var apiErr *pidginhost.GenericOpenAPIError
 	if errors.As(err, &apiErr) {
