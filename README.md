@@ -1,21 +1,22 @@
 # PidginHost Terraform Provider
 
-Manage cloud servers and account SSH public keys with the PidginHost API.
+Manage PidginHost cloud resources with Terraform.
 
-- Create and import servers, resize their packages, and update project labels and login settings.
-- Attach public and private networking at creation. Optionally release public IPs on server deletion.
-- Apply an existing firewall set and change public interface policies.
-- Enable destroy protection and manage account SSH public keys.
+| Area | Resources | Data sources |
+|---|---|---|
+| Servers | `pidginhost_server`, `pidginhost_server_snapshot`, `pidginhost_ssh_key` | `pidginhost_server`, `pidginhost_ssh_key`, `pidginhost_images`, `pidginhost_packages`, `pidginhost_generations` |
+| Storage | `pidginhost_volume`, `pidginhost_bucket`, `pidginhost_bucket_credentials` | `pidginhost_storage_products` |
+| Networking | `pidginhost_firewall`, `pidginhost_public_ip`, `pidginhost_floating_ip`, `pidginhost_private_network`, `pidginhost_private_network_member` | |
+| Kubernetes | `pidginhost_kubernetes_cluster`, `pidginhost_kubernetes_route`, `pidginhost_kubernetes_port_forward`, `pidginhost_kubernetes_lb_firewall`, `pidginhost_kubernetes_cluster_server` | `pidginhost_kubernetes_cluster_types`, `pidginhost_kubernetes_kubeconfig` |
 
-This version does not provide a catalog data source or separate volume, firewall, or public IP resources.
-It no longer creates inline firewall sets or extra volumes. Read the [upgrade guide](docs/guides/sdk-upgrade.md)
-before updating a configuration written for 0.1.x.
+`pidginhost_catalog` from 0.1 still works but is deprecated. Read the
+[0.2 upgrade guide](docs/guides/upgrading-to-0.2.md) before updating a configuration written for 0.1.
 
 ## Requirements
 
-- Go 1.27.2 or newer to build, as specified in `go.mod`.
 - Terraform 1.4 or newer.
-- A PidginHost API token with permission to manage the selected resources.
+- A PidginHost API token with permission to manage the resources you use.
+- Go 1.27.2 or newer to build the provider yourself.
 
 ## Usage
 
@@ -23,7 +24,8 @@ before updating a configuration written for 0.1.x.
 terraform {
   required_providers {
     pidginhost = {
-      source = "pidginhost/pidginhost"
+      source  = "pidginhost/pidginhost"
+      version = "~> 0.2"
     }
   }
 }
@@ -35,12 +37,22 @@ resource "pidginhost_ssh_key" "admin" {
   key   = file("~/.ssh/id_ed25519.pub")
 }
 
+resource "pidginhost_firewall" "web" {
+  name = "web"
+  rule = [
+    { direction = "in", action = "ACCEPT", protocol = "tcp", dport = "22" },
+    { direction = "in", action = "ACCEPT", protocol = "tcp", dport = "80,443" },
+  ]
+}
+
 resource "pidginhost_server" "web" {
-  hostname           = "web1"
-  image              = "ubuntu-24-04"
-  package            = "cloudv-1"
+  hostname            = "web1"
+  image               = "ubuntu-24-04"
+  package             = "cloudv-1"
   ssh_pub_key_id      = pidginhost_ssh_key.admin.id
-  new_ipv4           = true
+  new_ipv4            = true
+  fw_rules_set        = pidginhost_firewall.web.name
+  fw_policy_in        = "DROP"
   destroy_public_ipv4 = true
 
   timeouts {
@@ -49,12 +61,10 @@ resource "pidginhost_server" "web" {
 }
 ```
 
-Supply credentials through `PIDGINHOST_TOKEN`, or a sensitive variable passed to the provider's `token` argument.
-The provider also accepts `PIDGINHOST_ACCESS_TOKEN` and `PIDGINHOST_API_TOKEN`, in that order.
-Find image and package slugs through the PidginHost API or panel.
-
-See the [provider reference](docs/index.md), [server reference](docs/resources/server.md), and
-[SSH key reference](docs/resources/ssh_key.md) for all settings and import commands.
+Supply the token through `PIDGINHOST_TOKEN`, or pass a sensitive variable to the provider's `token`
+argument. `PIDGINHOST_ACCESS_TOKEN` and `PIDGINHOST_API_TOKEN` are read too, in that order.
+Image and package slugs come from the `pidginhost_images` and `pidginhost_packages` data sources.
+The [documentation](docs/index.md) lists every argument and import id.
 
 ## Lifecycle
 

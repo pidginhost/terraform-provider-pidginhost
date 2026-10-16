@@ -1,0 +1,56 @@
+---
+page_title: "Upgrading to 0.2"
+subcategory: ""
+description: |-
+  Move a configuration from provider 0.1 to 0.2.
+---
+
+# Upgrading to 0.2
+
+Version 0.2 gives firewalls, volumes and public addresses their own resources. In 0.1,
+`pidginhost_server` created and deleted them itself.
+
+## What changes for `pidginhost_server`
+
+These arguments are gone:
+
+- `firewall_rules_create`, `firewall_rules_set_name`, `firewall_rules`, `destroy_firewall_rules_set`
+  and `firewall_rules_set_id`: use `pidginhost_firewall` and set `fw_rules_set` on the server to its name.
+- `extra_volume_product`, `extra_volume_alias`, `extra_volume_size`, `destroy_extra_volume` and
+  `extra_volume_id`: use `pidginhost_volume` with `server_id`.
+- `wait_for_ready_seconds`: use a `timeouts` block.
+
+`package` must now be a package slug, not its numeric id. Changing `package` resizes the server in place,
+and `password`, `ssh_pub_key`, `project`, the firewall settings and `destroy_protection` also change in
+place instead of replacing the server.
+
+`status` now reports the API status of the server, such as `active`. Optional values left out of the
+configuration keep what the API has; an empty string clears a project, an SSH key or a firewall set.
+To destroy a server with `destroy_protection = true`, set it to false and apply first.
+
+## Steps
+
+1. Back up your state file and keep the backup private: state can contain passwords.
+2. Remove the arguments listed above from your `pidginhost_server` blocks.
+3. Run `terraform init -upgrade`, then `terraform plan`. Your existing servers stay as they are: the plan
+   must not replace them.
+4. If 0.1 created a firewall rule set or an extra volume for a server, the plan prints a warning naming it.
+   To keep managing it, add a resource and an `import` block, for example:
+
+```terraform
+resource "pidginhost_volume" "web1_extra" {
+  server_id = pidginhost_server.web1.id
+  product   = "ssd"
+  size      = 50
+}
+
+import {
+  to = pidginhost_volume.web1_extra
+  id = "123"
+}
+```
+
+5. Apply.
+
+The `pidginhost_catalog` data source still works but is deprecated. Use `pidginhost_images`,
+`pidginhost_packages`, `pidginhost_storage_products` and the other typed data sources instead.

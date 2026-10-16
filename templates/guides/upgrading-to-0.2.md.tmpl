@@ -24,12 +24,17 @@ These arguments are gone:
 and `password`, `ssh_pub_key`, `project`, the firewall settings and `destroy_protection` also change in
 place instead of replacing the server.
 
+`status` now reports the API status of the server, such as `active`. Optional values left out of the
+configuration keep what the API has; an empty string clears a project, an SSH key or a firewall set.
+To destroy a server with `destroy_protection = true`, set it to false and apply first.
+
 ## Steps
 
-1. Remove the arguments listed above from your `pidginhost_server` blocks.
-2. Run `terraform init -upgrade`, then `terraform plan`. Your existing servers stay as they are: the plan
+1. Back up your state file and keep the backup private: state can contain passwords.
+2. Remove the arguments listed above from your `pidginhost_server` blocks.
+3. Run `terraform init -upgrade`, then `terraform plan`. Your existing servers stay as they are: the plan
    must not replace them.
-3. If 0.1 created a firewall rule set or an extra volume for a server, the plan prints a warning naming it.
+4. If 0.1 created a firewall rule set or an extra volume for a server, the plan prints a warning naming it.
    To keep managing it, add a resource and an `import` block, for example:
 
 ```terraform
@@ -45,7 +50,7 @@ import {
 }
 ```
 
-4. Apply.
+5. Apply.
 
 The `pidginhost_catalog` data source still works but is deprecated. Use `pidginhost_images`,
 `pidginhost_packages`, `pidginhost_storage_products` and the other typed data sources instead.

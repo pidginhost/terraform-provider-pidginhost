@@ -131,12 +131,12 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			},
 			"image": schema.StringAttribute{
 				Required:      true,
-				Description:   "Operating system image slug from the PidginHost API or panel. Changing it replaces the server.",
+				Description:   "Operating system image slug, from the pidginhost_images data source. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"package": schema.StringAttribute{
 				Required: true,
-				Description: "Server package slug from the PidginHost API or panel. Changing it resizes the " +
+				Description: "Server package slug, from the pidginhost_packages data source. Changing it resizes the " +
 					"server in place; the API refuses packages with a smaller disk.",
 				Validators: []validator.String{notNumeric("package slug")},
 			},
@@ -202,8 +202,8 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			"fw_rules_set": schema.StringAttribute{
 				Optional: true,
 				Computed: true,
-				Description: "Name of an existing firewall rule set applied to the public interface. " +
-					"An empty string removes it. Some packages, such as the free tier, " +
+				Description: "Name of the firewall rule set applied to the public interface, for example " +
+					"pidginhost_firewall.web.name. An empty string removes it. Some packages, such as the free tier, " +
 					"keep their own firewall.",
 				Validators:    []validator.String{notNumeric("rule set name")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -470,7 +470,8 @@ func (r *serverResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	for _, address := range addresses {
 		if err := address.release(ctx, r.client); err != nil {
 			resp.Diagnostics.AddWarning("Public address "+address.address+" was not released",
-				"The server is deleted but this address is still on the account and billed. Release it in the panel. Cause: "+describeError(err))
+				"The server is deleted but this address is still on the account and billed. Release it in the panel "+
+					"or import it as pidginhost_public_ip and destroy it. Cause: "+describeError(err))
 		}
 	}
 }

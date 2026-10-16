@@ -1,16 +1,19 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -41,12 +44,20 @@ func TestUpgradeServerV0KeepsServerAndNamesDroppedObjects(t *testing.T) {
 	if m.DestroyPublicIPv4.ValueBool() || !m.DestroyPublicIPv6.ValueBool() {
 		t.Fatalf("destroy flags: %v %v", m.DestroyPublicIPv4, m.DestroyPublicIPv6)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0], "id 9") || !strings.Contains(notes[1], "id 7") {
+	if len(notes) != 2 || !strings.Contains(notes[0], `id = "9"`) || !strings.Contains(notes[1], `id = "7"`) {
 		t.Fatalf("notes: %q", notes)
 	}
+	// Every import the notes advise must target a resource this provider has.
+	registered := map[string]bool{}
+	for _, factory := range New("test")().Resources(context.Background()) {
+		var meta fwresource.MetadataResponse
+		factory().Metadata(context.Background(), fwresource.MetadataRequest{ProviderTypeName: "pidginhost"}, &meta)
+		registered[meta.TypeName] = true
+	}
 	for _, note := range notes {
-		if strings.Contains(note, "import {") {
-			t.Fatal("upgrade recommends importing into unavailable resources")
+		target := regexp.MustCompile(`import \{ to = (pidginhost_[a-z_]+)\.`).FindStringSubmatch(note)
+		if target == nil || !registered[target[1]] {
+			t.Fatalf("note does not advise importing into a registered resource: %q", note)
 		}
 	}
 

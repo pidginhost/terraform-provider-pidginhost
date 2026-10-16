@@ -42,7 +42,7 @@ func (p *pidginhostProvider) Metadata(_ context.Context, _ provider.MetadataRequ
 
 func (p *pidginhostProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manage PidginHost cloud servers and account SSH public keys.",
+		Description: "Manage PidginHost cloud servers, storage, networking and Kubernetes.",
 		Attributes: map[string]schema.Attribute{
 			"token": schema.StringAttribute{
 				Optional:  true,

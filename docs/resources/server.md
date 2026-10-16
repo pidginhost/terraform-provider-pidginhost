@@ -45,8 +45,8 @@ output "web_ipv4" {
 
 ### Required
 
-- `image` (String) Operating system image slug from the PidginHost API or panel. Changing it replaces the server.
-- `package` (String) Server package slug from the PidginHost API or panel. Changing it resizes the server in place; the API refuses packages with a smaller disk.
+- `image` (String) Operating system image slug, from the pidginhost_images data source. Changing it replaces the server.
+- `package` (String) Server package slug, from the pidginhost_packages data source. Changing it resizes the server in place; the API refuses packages with a smaller disk.
 
 ### Optional
 
@@ -56,7 +56,7 @@ output "web_ipv4" {
 - `enable_ha` (Boolean) Restart and move the server automatically when its host fails. Changing it replaces the server.
 - `fw_policy_in` (String) Default firewall policy for incoming traffic: ACCEPT, DROP or REJECT.
 - `fw_policy_out` (String) Default firewall policy for outgoing traffic: ACCEPT, DROP or REJECT.
-- `fw_rules_set` (String) Name of an existing firewall rule set applied to the public interface. An empty string removes it. Some packages, such as the free tier, keep their own firewall.
+- `fw_rules_set` (String) Name of the firewall rule set applied to the public interface, for example pidginhost_firewall.web.name. An empty string removes it. Some packages, such as the free tier, keep their own firewall.
 - `generation` (String) Hardware generation slug. The API picks the default when left empty. Changing it replaces the server.
 - `hostname` (String) Hostname. The API picks one when left empty. Changing it replaces the server.
 - `new_ipv4` (Boolean) Allocate a new IPv4 address and attach it before first boot. Changing it replaces the server.
