@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	pidginhost "github.com/pidginhost/sdk-go"
 )
 
@@ -116,10 +117,11 @@ resource "pidginhost_server" "acc%d" {
   hostname            = "%s-%d"
   image               = %q
   package             = %q
+  password            = %q
   new_ipv4            = true
   destroy_public_ipv4 = true
 }
-`, i, prefix, i, image, pkg)
+`, i, prefix, i, image, pkg, "Tf1-"+acctest.RandString(20))
 	}
 	return b.String()
 }

@@ -293,6 +293,7 @@ resource "pidginhost_server" "test" {
 
 func TestAccServer(t *testing.T) {
 	key := testAccSSHPublicKey(t)
+	testAccForgetAccountKey(t, key)
 	hostname := testAccName("srv")
 	image := os.Getenv("PIDGINHOST_ACC_IMAGE")
 	if image == "" {
