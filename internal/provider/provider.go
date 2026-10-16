@@ -108,6 +108,7 @@ func (p *pidginhostProvider) DataSources(_ context.Context) []func() datasource.
 		NewImagesDataSource,
 		NewPackagesDataSource,
 		NewGenerationsDataSource,
+		NewStorageProductsDataSource,
 	}
 }
 
