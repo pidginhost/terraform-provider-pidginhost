@@ -387,7 +387,7 @@ func (m *kubernetesLBFirewallModel) setRules(rules []lbRule) {
 			Direction: types.StringValue(r.Direction), Action: types.StringValue(r.Action),
 			Protocol: optional(r.Protocol), Source: optional(r.Source), Sport: optional(r.Sport),
 			Destination: optional(r.Destination), Dport: optional(r.Dport), Comment: optional(r.Comment),
-			Enabled: types.BoolValue(r.Enabled), Position: types.Int64Value(int64(r.Position)),
+			Enabled: types.BoolValue(r.Enabled), Position: types.Int64Value(r.Position),
 		}
 	}
 }

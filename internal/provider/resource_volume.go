@@ -36,6 +36,7 @@ type volumeModel struct {
 	Size     types.Int64    `tfsdk:"size"`
 	Product  types.String   `tfsdk:"product"`
 	Project  types.String   `tfsdk:"project"`
+	Status   types.String   `tfsdk:"status"`
 	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
@@ -79,9 +80,14 @@ func (r *volumeResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 				Validators:    []validator.String{stringvalidator.LengthAtMost(200)},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"status": schema.StringAttribute{
+				Computed: true,
+				Description: "Status reported by the API, such as active. Terraform waits for active after " +
+					"creating, moving or growing the volume, and before growing it, since the API resizes only active volumes.",
+			},
 		},
 		Blocks: map[string]schema.Block{
-			"timeouts": timeouts.Block(ctx, timeouts.Opts{Update: true, Delete: true}),
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{Create: true, Update: true, Delete: true}),
 		},
 	}
 }
@@ -116,9 +122,25 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 	body := pidginhost.NewVolumeRequest(plan.Size.ValueInt64(), plan.Product.ValueString())
 	body.Alias = optionalString(plan.Alias)
 	body.Project = optionalString(plan.Project)
+	timeout, diags := plan.Timeouts.Create(ctx, computeDefaultTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	v, _, err := r.client.CloudAPI.CloudServersVolumesCreate(ctx, plan.ServerID.ValueString()).VolumeRequest(*body).Execute()
 	if err != nil {
 		resp.Diagnostics.Append(apiError("Creating volume", err))
+		return
+	}
+	// Saved before waiting, so a volume that fails to provision is tainted, not orphaned.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), strconv.Itoa(int(v.Id)))...)
+	if v, err = r.waitVolume(ctx, v.Id, volumeActive); err == nil && v == nil {
+		err = fmt.Errorf("the volume disappeared while it was being created")
+	}
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Waiting for the volume to become active", err))
 		return
 	}
 	plan.fill(v)
@@ -168,35 +190,52 @@ func (r *volumeResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	var body pidginhost.PatchedVolumeUpdateRequest
-	if !plan.Alias.Equal(state.Alias) {
-		body.Alias = optionalString(plan.Alias)
+	timeout, diags := plan.Timeouts.Update(ctx, computeDefaultTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	if !plan.Size.Equal(state.Size) {
-		body.Size = optionalInt64(plan.Size)
-	}
-	if !plan.Project.Equal(state.Project) {
-		body.Project = optionalString(plan.Project)
-	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	var v *pidginhost.Volume
-	if body.Alias != nil || body.Size != nil || body.Project != nil {
-		v, _, err = r.client.CloudAPI.CloudVolumesPartialUpdate(ctx, id).PatchedVolumeUpdateRequest(body).Execute()
-		if err != nil {
-			resp.Diagnostics.Append(apiError("Updating volume", err))
+	if !plan.ServerID.Equal(state.ServerID) {
+		if v, err = r.move(ctx, id, plan.ServerID.ValueString()); err != nil {
+			resp.Diagnostics.Append(apiError("Moving volume", err))
 			return
 		}
 	}
 
-	if !plan.ServerID.Equal(state.ServerID) {
-		timeout, diags := plan.Timeouts.Update(ctx, computeDefaultTimeout)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
+	var body pidginhost.PatchedVolumeUpdateRequest
+	if !plan.Alias.Equal(state.Alias) {
+		body.Alias = optionalString(plan.Alias)
+	}
+	if !plan.Project.Equal(state.Project) {
+		body.Project = optionalString(plan.Project)
+	}
+	grow := !plan.Size.Equal(state.Size)
+	if grow {
+		body.Size = optionalInt64(plan.Size)
+		// The API resizes only active volumes; a new or moved one may still be busy.
+		if _, err = r.waitVolume(ctx, id, volumeActive); err != nil {
+			resp.Diagnostics.Append(apiError("Waiting for the volume to become active", err))
 			return
 		}
-		waitCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		if v, err = r.move(waitCtx, id, plan.ServerID.ValueString()); err != nil {
-			resp.Diagnostics.Append(apiError("Moving volume", err))
+	}
+	if body.Alias != nil || body.Size != nil || body.Project != nil {
+		if v, _, err = r.client.CloudAPI.CloudVolumesPartialUpdate(ctx, id).PatchedVolumeUpdateRequest(body).Execute(); err != nil {
+			resp.Diagnostics.Append(apiError("Updating volume", err))
+			return
+		}
+	}
+	if grow {
+		want := plan.Size.ValueInt64()
+		v, err = r.waitVolume(ctx, id, func(v *pidginhost.Volume) (bool, error) {
+			active, err := volumeActive(v)
+			return active && v.Size == want, err
+		})
+		if err != nil {
+			resp.Diagnostics.Append(apiError("Waiting for the resize", err))
 			return
 		}
 	}
@@ -229,6 +268,11 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// A volume still provisioning or changing cannot be cancelled yet.
+	if _, err := r.waitVolume(waitCtx, id, func(v *pidginhost.Volume) (bool, error) { return !volumeBusy(v), nil }); err != nil {
+		resp.Diagnostics.Append(apiError("Waiting for the volume to settle", err))
+		return
+	}
 	// The API refuses to delete a volume while it is on a server.
 	v, err := r.detach(waitCtx, id)
 	if err != nil {
@@ -266,8 +310,8 @@ func (r *volumeResource) move(ctx context.Context, id int32, serverID string) (*
 		return nil, err
 	}
 	v, err = r.waitVolume(ctx, id, func(v *pidginhost.Volume) (bool, error) {
-		if !v.Attached || v.Server == "" {
-			return false, nil
+		if active, err := volumeActive(v); !active || err != nil || !v.Attached || v.Server == "" {
+			return false, err
 		}
 		return r.serverHasVolume(ctx, vm, id)
 	})
@@ -372,10 +416,29 @@ func (r *volumeResource) serverHasVolume(ctx context.Context, serverID, volumeID
 func (m *volumeModel) fill(v *pidginhost.Volume) {
 	m.ID = types.StringValue(strconv.Itoa(int(v.Id)))
 	m.Alias = types.StringValue(v.GetAlias())
-	m.Size = types.Int64Value(int64(v.Size))
+	m.Size = types.Int64Value(v.Size)
 	m.Project = types.StringValue(v.GetProject())
+	m.Status = types.StringValue(string(v.Status))
 	// The API takes a product ID or slug; keep the one configured.
 	if m.Product.IsNull() || m.Product.IsUnknown() {
 		m.Product = types.StringValue(v.Product)
 	}
+}
+
+// volumeActive reports whether the API can change the volume now. A volume
+// that failed will not become active by waiting.
+func volumeActive(v *pidginhost.Volume) (bool, error) {
+	if v.Status == pidginhost.RESOURCESTATUSENUM_FAILED {
+		return false, fmt.Errorf("volume %d failed", v.Id)
+	}
+	return v.Status == pidginhost.RESOURCESTATUSENUM_ACTIVE, nil
+}
+
+// volumeBusy reports a volume the API is still provisioning or changing.
+func volumeBusy(v *pidginhost.Volume) bool {
+	switch v.Status {
+	case pidginhost.RESOURCESTATUSENUM_PENDING, pidginhost.RESOURCESTATUSENUM_PROVISIONING, pidginhost.RESOURCESTATUSENUM_UPGRADING:
+		return true
+	}
+	return false
 }

@@ -112,7 +112,7 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"cpus": 1, "memory": 1, "disk_size": 20, "generation": "gp", "machine": map[string]any{},
 			"volumes": []any{}, "floating_ips": []any{}, "status": "provisioning", "username": "ubuntu",
 			"destroy_protection": false, "ha_enabled": false, "custom_os": false, "rescue_mode": false,
-			"boot_iso": nil, "rescue_supported": true, "project": "",
+			"boot_iso": nil, "rescue_supported": true, "project": "", "billing": nil,
 			"networks": map[string]any{"public": public, "private": []any{}},
 		}
 		f.reads = 0

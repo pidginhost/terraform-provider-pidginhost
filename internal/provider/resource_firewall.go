@@ -403,7 +403,7 @@ func firewallRuleFromAPI(r pidginhost.FirewallRule) firewallRuleModel {
 		Position: types.Int64Null(),
 	}
 	if r.Position != nil {
-		m.Position = types.Int64Value(int64(*r.Position))
+		m.Position = types.Int64Value(*r.Position)
 	}
 	return m
 }

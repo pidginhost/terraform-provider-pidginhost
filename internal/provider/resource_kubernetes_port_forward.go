@@ -169,7 +169,7 @@ func (r *kubernetesPortForwardResource) ImportState(ctx context.Context, req res
 
 func (m *kubernetesPortForwardModel) fill(forward *pidginhost.K8sPortForward) {
 	m.ID = types.StringValue(strconv.Itoa(int(forward.Id)))
-	m.Port = types.Int64Value(int64(forward.Port))
+	m.Port = types.Int64Value(forward.Port)
 	m.Protocol = types.StringValue(string(forward.Protocol))
 	m.InternalIP = types.StringValue(forward.InternalIp)
 }

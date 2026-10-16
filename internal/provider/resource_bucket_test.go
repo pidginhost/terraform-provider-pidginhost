@@ -87,7 +87,7 @@ func TestWaitBucketActiveFailsOnAFailedBucket(t *testing.T) {
 }
 
 func TestWaitBucketGone(t *testing.T) {
-	other := `{"id":6,"name":"other","full_name":"c1-other","quota_gb":1,"used_bytes":0,"object_count":0,` +
+	other := `{"id":6,"name":"other","full_name":"c1-other","quota_gb":1,"used_bytes":0,"object_count":0,"billing":null,` +
 		`"public_read":false,"status":"active","endpoint":"","region":"","created":""}`
 	cases := map[string]struct {
 		lists   []string
@@ -116,7 +116,7 @@ func TestWaitBucketGone(t *testing.T) {
 }
 
 func bucketJSON(status string) string {
-	return fmt.Sprintf(`{"id":5,"name":"media","full_name":"c1-media","quota_gb":1,"used_bytes":0,"object_count":0,`+
+	return fmt.Sprintf(`{"id":5,"name":"media","full_name":"c1-media","quota_gb":1,"used_bytes":0,"object_count":0,"billing":null,`+
 		`"public_read":false,"status":%q,"endpoint":"https://s3.example.com","region":"default","created":""}`, status)
 }
 

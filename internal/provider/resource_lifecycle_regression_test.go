@@ -209,7 +209,7 @@ func TestSnapshotReadKeepsPendingDeletion(t *testing.T) {
 }
 
 func TestVolumeMoveWaitsForAttachmentOnTarget(t *testing.T) {
-	vol := pidginhost.Volume{Id: 7, Size: 20, Product: "ssd"}
+	vol := pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Status: "active"}
 	volumeReads, serverReads := 0, 0
 	client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
 		switch call {

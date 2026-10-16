@@ -63,7 +63,7 @@ func testServerJSON(id int, hostname, status string) string {
 	return fmt.Sprintf(`{"id": %d, "hostname": %q, "status": %q, "project": "web", "image": "ubuntu24",
 		"package": "cloudv-2", "cpus": 2, "memory": 4, "disk_size": 50, "generation": "gen2", "username": "ubuntu",
 		"destroy_protection": true, "ha_enabled": false, "custom_os": false, "rescue_mode": false, "boot_iso": null,
-		"rescue_supported": true, "machine": {}, "volumes": [], "floating_ips": [],
+		"rescue_supported": true, "machine": {}, "volumes": [], "floating_ips": [], "billing": null,
 		"networks": {"public": {"interface": "eth0", "ipv4": "192.0.2.10", "ipv6": "2001:db8::10"},
 			"private": [{"interface": "eth1", "address": "198.51.100.5", "network": "198.51.100.0/24"}]}}`,
 		id, hostname, status)

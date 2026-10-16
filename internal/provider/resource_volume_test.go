@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -105,7 +106,7 @@ func TestVolumeRefusesToShrink(t *testing.T) {
 
 // fakeVolume serves volume 7, which takes two polls to finish a detach.
 func fakeVolume(t *testing.T) (*pidginhost.APIClient, func() []string) {
-	vol := pidginhost.Volume{Id: 7, Alias: pidginhost.PtrString("data"), Size: 20, Product: "ssd", Attached: true, Server: "web-1"}
+	vol := pidginhost.Volume{Id: 7, Alias: pidginhost.PtrString("data"), Size: 20, Product: "ssd", Attached: true, Server: "web-1", Status: "active"}
 	detaching := 0
 	return fakeAPI(t, func(call string, body map[string]any) (int, any) {
 		switch call {
@@ -179,7 +180,7 @@ func TestVolumeReadFindsTheServerAfterImport(t *testing.T) {
 	server := func(id int32, hostname string, volumes ...pidginhost.Volume) pidginhost.ServerDetail {
 		return pidginhost.ServerDetail{Id: id, Hostname: hostname, Volumes: volumes, Status: "active"}
 	}
-	vol := pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Attached: true, Server: "web"}
+	vol := pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Attached: true, Server: "web", Status: "active"}
 	client, calls := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
 		switch call {
 		case "GET /api/cloud/volumes/7/":
@@ -209,3 +210,53 @@ func TestVolumeReadFindsTheServerAfterImport(t *testing.T) {
 		t.Fatalf("server_id = %s, product = %s; want 3, ssd", got.ServerID, got.Product)
 	}
 }
+
+func TestVolumeGrowWaitsForActiveBeforeAndAfter(t *testing.T) {
+	defer func(old time.Duration) { pollInterval = old }(pollInterval)
+	pollInterval = time.Millisecond
+	// A volume that is still provisioning, as right after creation or a move.
+	vol := pidginhost.Volume{Id: 7, Alias: pidginhost.PtrString("data"), Size: 20, Product: "ssd", Attached: true, Server: "web-1", Status: "provisioning"}
+	reads, resizeAt, refused := 0, 0, 0
+	client, calls := fakeAPI(t, func(call string, body map[string]any) (int, any) {
+		switch call {
+		case "GET /api/cloud/volumes/7/":
+			if reads++; reads == 2 {
+				vol.Status = "active"
+			}
+			if resizeAt > 0 && reads >= resizeAt+2 {
+				vol.Status, vol.Size = "active", int64(body2size)
+			}
+			return 200, vol
+		case "PATCH /api/cloud/volumes/7/":
+			// The API grows only active volumes and answers 409 otherwise.
+			if vol.Status != "active" {
+				refused++
+				return 409, map[string]any{"detail": "The volume is provisioning."}
+			}
+			vol.Status, resizeAt = "upgrading", reads
+			return 200, vol
+		}
+		return 500, map[string]any{"detail": "unexpected call " + call}
+	})
+	r := &volumeResource{client: client}
+	s := testSchema(r)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req := resource.UpdateRequest{
+		State: testState(t, s, testVolume(t, r, 20, "1")),
+		Plan:  testPlan(t, s, testVolume(t, r, body2size, "1")),
+	}
+	resp := resource.UpdateResponse{State: testState(t, s, nil)}
+	r.Update(ctx, req, &resp)
+	if resp.Diagnostics.HasError() || refused > 0 {
+		t.Fatalf("diags %v, refused %d, calls %v", resp.Diagnostics, refused, calls())
+	}
+	var got volumeModel
+	resp.State.Get(context.Background(), &got)
+	if got.Size.ValueInt64() != body2size || got.Status.ValueString() != "active" {
+		t.Fatalf("state size %v status %v, calls %v", got.Size, got.Status, calls())
+	}
+}
+
+// body2size is the size the grow test asks for.
+const body2size = 30
