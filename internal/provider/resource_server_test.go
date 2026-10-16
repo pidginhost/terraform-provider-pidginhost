@@ -296,7 +296,7 @@ func TestAccServer(t *testing.T) {
 	hostname := testAccName("srv")
 	image := os.Getenv("PIDGINHOST_ACC_IMAGE")
 	if image == "" {
-		image = "ubuntu-24-04"
+		image = "ubuntu24"
 	}
 	pkg := os.Getenv("PIDGINHOST_ACC_PACKAGE")
 	if pkg == "" {

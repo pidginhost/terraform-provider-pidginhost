@@ -34,7 +34,7 @@ resource "pidginhost_firewall" "dev" {
 
 resource "pidginhost_server" "dev" {
   hostname       = "tf-dev"
-  image          = "ubuntu-24-04"
+  image          = "ubuntu24"
   package        = "cloudv-1"
   ssh_pub_key_id = pidginhost_ssh_key.dev.id
   new_ipv4       = true
