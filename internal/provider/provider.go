@@ -116,6 +116,7 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 		NewKubernetesLBFirewallResource,
 		NewKubernetesClusterServerResource,
 		NewDNSZoneResource,
+		NewDNSRecordResource,
 	}
 }
 
