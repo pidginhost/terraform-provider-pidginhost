@@ -78,7 +78,9 @@ func (r *kubernetesLBFirewallResource) Schema(_ context.Context, _ resource.Sche
 	needsProtocol := stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("protocol"))
 	resp.Schema = schema.Schema{
 		Description: "The firewall rules of the load balancer of a Kubernetes cluster. The rule list is authoritative: " +
-			"rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules.",
+			"rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules. " +
+			"Omitting the list or setting it to [] removes all rules. If creation fails after changes begin, " +
+			"Terraform keeps the resource in state for cleanup.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:      true,
@@ -138,7 +140,26 @@ func (r *kubernetesLBFirewallResource) Create(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.apply(ctx, &plan); err != nil {
+	clusterID, err := parseID(plan.ClusterID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
+		return
+	}
+	existing, found, err := listLBRules(ctx, r.client, clusterID)
+	if err == nil && !found {
+		err = errClusterGone
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Creating Kubernetes load balancer firewall", err.Error())
+		return
+	}
+	// The authoritative rules can be partly applied before an API call fails.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), plan.ClusterID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("cluster_id"), plan.ClusterID)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.applyRules(ctx, &plan, clusterID, existing); err != nil {
 		resp.Diagnostics.AddError("Creating Kubernetes load balancer firewall", err.Error())
 		return
 	}
@@ -212,7 +233,6 @@ func (r *kubernetesLBFirewallResource) apply(ctx context.Context, m *kubernetesL
 	if err != nil {
 		return err
 	}
-	desired := m.rules()
 	existing, found, err := listLBRules(ctx, r.client, clusterID)
 	if err == nil && !found {
 		err = errClusterGone
@@ -220,6 +240,11 @@ func (r *kubernetesLBFirewallResource) apply(ctx context.Context, m *kubernetesL
 	if err != nil {
 		return err
 	}
+	return r.applyRules(ctx, m, clusterID, existing)
+}
+
+func (r *kubernetesLBFirewallResource) applyRules(ctx context.Context, m *kubernetesLBFirewallModel, clusterID int32, existing []lbRule) error {
+	desired := m.rules()
 	api := r.client.KubernetesAPI
 	create, patch, remove := diffLBRules(existing, desired)
 	for _, rule := range remove {
@@ -352,7 +377,10 @@ func (m *kubernetesLBFirewallModel) setRules(rules []lbRule) {
 		}
 		return types.StringValue(s)
 	}
-	// Never nil: zero rule blocks are an empty list, not a null one.
+	// An omitted attribute must stay null; an explicit empty list stays empty.
+	if len(rules) == 0 && m.Rules == nil {
+		return
+	}
 	m.Rules = make([]lbFirewallRuleModel, len(rules))
 	for i, r := range rules {
 		m.Rules[i] = lbFirewallRuleModel{

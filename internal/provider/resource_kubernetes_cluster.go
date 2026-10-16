@@ -91,7 +91,7 @@ func (r *kubernetesClusterResource) Schema(ctx context.Context, _ resource.Schem
 			},
 			"resource_pool_size": schema.Int64Attribute{
 				Optional:      true,
-				Description:   "Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created; resize the pool with pidginhost_kubernetes_node_pool.",
+				Description:   "Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created. This provider cannot resize pools; use the control panel.",
 				Validators:    []validator.Int64{int64validator.AtLeast(1)},
 				PlanModifiers: []planmodifier.Int64{firstPoolInt64{}},
 			},
@@ -106,8 +106,8 @@ func (r *kubernetesClusterResource) Schema(ctx context.Context, _ resource.Schem
 			},
 			"enable_gateway_api": schema.BoolAttribute{
 				Optional:      true,
-				Description:   "Enable the Gateway API. The API enables it when not set. Changing it replaces the cluster.",
-				PlanModifiers: []planmodifier.Bool{replaceBoolIfChanged()},
+				Description:   "Enable the Gateway API. The API enables it when not set. Changing, setting or removing it replaces the cluster. The API does not return this setting; leave it unset after import to keep the existing cluster.",
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"dual_stack": schema.BoolAttribute{
 				Optional: true,
@@ -513,17 +513,12 @@ func clusterFeatures(ctx context.Context, set types.Set, diags *diag.Diagnostics
 	return features
 }
 
-// Values the API does not return are null after an import, and removing one
-// from the configuration keeps what the cluster has. Neither must replace a
-// cluster; only a change from one set value to another does.
-const replaceIfChangedDescription = "Changing the value replaces the cluster. Setting or removing it does not."
-
 // The first resource pool is described on the cluster only to create it.
 // Changing those values later would otherwise replace the whole cluster, so
-// the plan stops with a pointer to the pool's own resource instead.
+// the plan stops instead. Pool management is not available in this provider.
 const firstPoolChanged = "The first resource pool is only described here to create the cluster, and changing it " +
-	"would replace the cluster. Resize or replace the pool through pidginhost_kubernetes_node_pool (import it by " +
-	"\"<cluster_id>/<pool_id>\"), and set this value back to %s."
+	"cannot update the pool. This provider cannot manage pools yet. Resize the pool in the control panel, " +
+	"and set this creation value back to %s."
 
 type firstPoolString struct{}
 
@@ -555,12 +550,6 @@ func (firstPoolInt64) PlanModifyInt64(_ context.Context, req planmodifier.Int64R
 	}
 	resp.Diagnostics.AddAttributeError(req.Path, "Only used when the cluster is created",
 		fmt.Sprintf(firstPoolChanged, strconv.FormatInt(req.StateValue.ValueInt64(), 10)))
-}
-
-func replaceBoolIfChanged() planmodifier.Bool {
-	return boolplanmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.BoolRequest, resp *boolplanmodifier.RequiresReplaceIfFuncResponse) {
-		resp.RequiresReplace = !req.StateValue.IsNull() && !req.PlanValue.IsNull()
-	}, replaceIfChangedDescription, replaceIfChangedDescription)
 }
 
 // pollCluster polls the cluster until done accepts it. done gets nil while the

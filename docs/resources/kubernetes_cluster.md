@@ -41,14 +41,14 @@ resource "pidginhost_kubernetes_cluster" "example" {
 
 - `acknowledge_workload_restart` (Boolean) Accept that changing encryption restarts the workloads of the cluster.
 - `dual_stack` (Boolean) IPv6 dual stack for pods, services and the cluster private network. The API ignores it where the platform does not offer dual stack. Changing it replaces the cluster.
-- `enable_gateway_api` (Boolean) Enable the Gateway API. The API enables it when not set. Changing it replaces the cluster.
+- `enable_gateway_api` (Boolean) Enable the Gateway API. The API enables it when not set. Changing, setting or removing it replaces the cluster. The API does not return this setting; leave it unset after import to keep the existing cluster.
 - `encryption` (String) WireGuard encryption of pod traffic: disabled or enabled. Changing it restarts the workloads and requires acknowledge_workload_restart = true.
 - `features` (Set of String) Optional cluster features: cert-manager, ceph-csi, metrics-server, cloudnative-pg, mariadb-operator, mongodb-operator, lb-envoy-metrics. They install in the background after a change.
 - `generation` (String) Hardware generation slug. Changing it replaces the cluster.
 - `kube_version` (String) Kubernetes version, for example 1.35.7. The latest offered version when not set. Raising it upgrades the cluster one version at a time. Downgrades are not possible.
 - `name` (String) Cluster name. The API picks one when left empty.
 - `protected` (Boolean) Protect the cluster from deletion. To destroy a protected cluster, set it to false and apply first.
-- `resource_pool_size` (Number) Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created; resize the pool with pidginhost_kubernetes_node_pool.
+- `resource_pool_size` (Number) Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created. This provider cannot resize pools; use the control panel.
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

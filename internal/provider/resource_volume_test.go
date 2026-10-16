@@ -126,6 +126,8 @@ func fakeVolume(t *testing.T) (*pidginhost.APIClient, func() []string) {
 				return 400, map[string]any{"detail": "volume is attached"}
 			}
 			return 204, nil
+		case "GET /api/cloud/servers/2/":
+			return 200, pidginhost.ServerDetail{Id: 2, Hostname: "web-2", Status: "active", Volumes: []pidginhost.Volume{vol}}
 		}
 		return 500, map[string]any{"detail": "unexpected call " + call}
 	})

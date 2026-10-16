@@ -56,7 +56,8 @@ func (r *publicIPResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 	computed := []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
 	resp.Schema = schema.Schema{
 		Description: "A public IPv4 or IPv6 address allocated to the account, optionally attached to a cloud server. " +
-			"Every new resource allocates a new address.",
+			"Every new resource allocates a new address. Deletion waits for detachment before releasing the address. " +
+			"The update and delete timeouts default to 20 minutes.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"version": schema.Int64Attribute{
@@ -103,7 +104,7 @@ func (r *publicIPResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			},
 		},
 		Blocks: map[string]schema.Block{
-			"timeouts": timeouts.Block(ctx, timeouts.Opts{Update: true}),
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{Update: true, Delete: true}),
 		},
 	}
 }
@@ -245,6 +246,13 @@ func (r *publicIPResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	timeout, diags := state.Timeouts.Delete(ctx, computeDefaultTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	id, err := parseID(state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid public IP id", err.Error())
@@ -264,6 +272,10 @@ func (r *publicIPResource) Delete(ctx context.Context, req resource.DeleteReques
 			resp.Diagnostics.Append(apiError("Detaching public IP", err))
 			return
 		}
+		if err := r.waitDetached(ctx, version, id); err != nil {
+			resp.Diagnostics.Append(apiError("Waiting for public IP detachment", err))
+			return
+		}
 	}
 	if httpResp, err := r.release(ctx, version, id); err != nil && !isNotFound(httpResp, err) {
 		resp.Diagnostics.Append(apiError("Releasing public IP", err))
@@ -280,10 +292,10 @@ func (r *publicIPResource) ImportState(ctx context.Context, req resource.ImportS
 // server). managed is the server this resource attached it to. It refuses to
 // take the address off any other server.
 func planIPBinding(bound bool, boundTo, managed, want string) (detach, attach bool, err error) {
-	if bound && boundTo == want {
+	if bound && boundTo != "" && boundTo == want {
 		return false, false, nil
 	}
-	if bound && boundTo != managed {
+	if bound && (boundTo == "" || boundTo != managed) {
 		where := "server " + boundTo
 		if boundTo == "" {
 			where = "a server outside the cloud servers"
@@ -306,11 +318,7 @@ func (r *publicIPResource) bind(ctx context.Context, version int64, ip *pidginho
 		if httpResp, err := r.detach(ctx, version, ip.Id); err != nil && !isNotFound(httpResp, err) {
 			return false, err
 		}
-		err := waitFor(ctx, pollInterval, func() (bool, error) {
-			got, _, err := r.get(ctx, version, ip.Id)
-			return err == nil && !ipBound(got), err
-		})
-		if err != nil {
+		if err := r.waitDetached(ctx, version, ip.Id); err != nil {
 			return false, fmt.Errorf("waiting for the detach: %w", err)
 		}
 	}
@@ -335,6 +343,16 @@ func (r *publicIPResource) bind(ctx context.Context, version int64, ip *pidginho
 		return false, err
 	}
 	return res.RebootRequired && !res.Rebooted, nil
+}
+
+func (r *publicIPResource) waitDetached(ctx context.Context, version int64, id int32) error {
+	return waitFor(ctx, pollInterval, func() (bool, error) {
+		got, httpResp, err := r.get(ctx, version, id)
+		if isNotFound(httpResp, err) {
+			return true, nil
+		}
+		return err == nil && !ipBound(got), err
+	})
 }
 
 // readInto reads the address after a change and fills m.

@@ -127,9 +127,21 @@ func apiError(summary string, err error) diag.Diagnostic {
 
 // secretRouteError is apiError for endpoints whose response body is itself a
 // secret: a body that failed to decode would otherwise quote the keys into
-// the Terraform output and logs. Only the status line is kept.
-func secretRouteError(summary string, err error) diag.Diagnostic {
-	return diag.NewErrorDiagnostic(summary, err.Error()+" (response body withheld: it can carry credentials)")
+// the Terraform output and logs. SDK decoding errors can quote the body too.
+func secretRouteError(summary string, resp *http.Response, err error) diag.Diagnostic {
+	detail := "The request failed"
+	switch {
+	case errors.Is(err, context.Canceled):
+		detail = "The request was canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		detail = "The request timed out"
+	case resp != nil:
+		detail = fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		if resp.StatusCode < 300 {
+			detail += ": the response could not be read"
+		}
+	}
+	return diag.NewErrorDiagnostic(summary, detail+" (response details withheld: they can carry credentials)")
 }
 
 func describeError(err error) string {

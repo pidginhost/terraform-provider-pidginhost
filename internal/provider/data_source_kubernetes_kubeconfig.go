@@ -74,10 +74,9 @@ func (d *kubernetesKubeconfigDataSource) Read(ctx context.Context, req datasourc
 		resp.Diagnostics.Append(apiError("Reading Kubernetes cluster", err))
 		return
 	}
-	kubeconfig, _, err := d.client.KubernetesAPI.KubernetesClustersKubeconfigRetrieve(ctx, id).Execute()
+	kubeconfig, httpResp, err := d.client.KubernetesAPI.KubernetesClustersKubeconfigRetrieve(ctx, id).Execute()
 	if err != nil {
-		// Only the status: the body of a failed request may hold credentials.
-		resp.Diagnostics.AddError("Reading kubeconfig", fmt.Sprintf("Cluster %s: %s", id, err.Error()))
+		resp.Diagnostics.Append(secretRouteError("Reading kubeconfig for cluster "+id, httpResp, err))
 		return
 	}
 	config.Kubeconfig = types.StringValue(kubeconfig)

@@ -27,7 +27,7 @@ resource "pidginhost_volume" "data" {
 ### Required
 
 - `product` (String) Storage product slug or ID. Changing it replaces the volume.
-- `server_id` (String) ID of the server the volume is attached to. Changing it detaches the volume and attaches it to the new server without replacing it.
+- `server_id` (String) ID of the server the volume is attached to. Changing it detaches the volume and attaches it to the new server without replacing it. Terraform waits until the target server lists the attached volume.
 - `size` (Number) Size in GB. A volume can grow in place but cannot shrink.
 
 ### Optional

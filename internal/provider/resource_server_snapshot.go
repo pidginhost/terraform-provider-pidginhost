@@ -59,7 +59,8 @@ func (r *serverSnapshotResource) Schema(ctx context.Context, _ resource.SchemaRe
 		Description: "A snapshot of a cloud server. The API takes snapshots only while the server is active and not " +
 			"booted from an ISO. Every argument is fixed at creation: changing one replaces the snapshot. The API " +
 			"queues snapshot operations, so Terraform follows them in the server's activity log: it fails when the " +
-			"server refuses the operation, and sends it again every 30 seconds while another operation holds the server.",
+			"server refuses the operation, and sends it again every 30 seconds while another operation holds the server. " +
+			"Snapshots stay in state until deletion finishes.",
 		Attributes: map[string]schema.Attribute{
 			"id": id,
 			"server_id": schema.StringAttribute{
@@ -185,7 +186,7 @@ func (r *serverSnapshotResource) Read(ctx context.Context, req resource.ReadRequ
 		resp.Diagnostics.Append(apiError("Reading server snapshot", err))
 		return
 	}
-	if snapshot == nil || snapshot.State == snapshotDeleting {
+	if snapshot == nil {
 		resp.State.RemoveResource(ctx)
 		return
 	}

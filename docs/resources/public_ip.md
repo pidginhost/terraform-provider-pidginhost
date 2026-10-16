@@ -3,12 +3,12 @@
 page_title: "pidginhost_public_ip Resource - pidginhost"
 subcategory: ""
 description: |-
-  A public IPv4 or IPv6 address allocated to the account, optionally attached to a cloud server. Every new resource allocates a new address.
+  A public IPv4 or IPv6 address allocated to the account, optionally attached to a cloud server. Every new resource allocates a new address. Deletion waits for detachment before releasing the address. The update and delete timeouts default to 20 minutes.
 ---
 
 # pidginhost_public_ip (Resource)
 
-A public IPv4 or IPv6 address allocated to the account, optionally attached to a cloud server. Every new resource allocates a new address.
+A public IPv4 or IPv6 address allocated to the account, optionally attached to a cloud server. Every new resource allocates a new address. Deletion waits for detachment before releasing the address. The update and delete timeouts default to 20 minutes.
 
 ## Example Usage
 
@@ -47,6 +47,7 @@ resource "pidginhost_public_ip" "web" {
 
 Optional:
 
+- `delete` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Setting a timeout for a Delete operation is only applicable if changes are saved into state before the destroy operation occurs.
 - `update` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
 
 ## Import

@@ -103,9 +103,9 @@ func (r *bucketCredentialsResource) Create(ctx context.Context, req resource.Cre
 		resp.Diagnostics.AddError("Reading bucket credentials", err.Error())
 		return
 	}
-	creds, _, err := r.client.CloudAPI.CloudBucketsCredentialsRevealCreate(ctx, id).Execute()
+	creds, httpResp, err := r.client.CloudAPI.CloudBucketsCredentialsRevealCreate(ctx, id).Execute()
 	if err != nil {
-		resp.Diagnostics.Append(secretRouteError("Reading bucket credentials", err))
+		resp.Diagnostics.Append(secretRouteError("Reading bucket credentials", httpResp, err))
 		return
 	}
 	plan.ID = plan.BucketID
@@ -156,9 +156,9 @@ func (r *bucketCredentialsResource) Update(ctx context.Context, req resource.Upd
 		resp.Diagnostics.AddError("Rotating bucket credentials", err.Error())
 		return
 	}
-	creds, _, err := r.client.CloudAPI.CloudBucketsCredentialsRotateCreate(ctx, id).Execute()
+	creds, httpResp, err := r.client.CloudAPI.CloudBucketsCredentialsRotateCreate(ctx, id).Execute()
 	if err != nil {
-		resp.Diagnostics.Append(secretRouteError("Rotating bucket credentials", err))
+		resp.Diagnostics.Append(secretRouteError("Rotating bucket credentials", httpResp, err))
 		return
 	}
 	plan.setKeys(creds)

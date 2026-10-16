@@ -81,6 +81,7 @@ or `fw_rules_set` to clear that setting. Clearing a login key does not revoke ke
 Changing an SSH login key can reboot the server.
 
 Passwords, startup scripts, and provider credentials are sensitive. Protect Terraform state and saved plans.
+Errors while fetching bucket credentials or kubeconfig withhold response details that could contain secrets.
 The API stores startup scripts in cleartext.
 
 ## Local development

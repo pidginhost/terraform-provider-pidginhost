@@ -3,12 +3,12 @@
 page_title: "pidginhost_server_snapshot Resource - pidginhost"
 subcategory: ""
 description: |-
-  A snapshot of a cloud server. The API takes snapshots only while the server is active and not booted from an ISO. Every argument is fixed at creation: changing one replaces the snapshot. The API queues snapshot operations, so Terraform follows them in the server's activity log: it fails when the server refuses the operation, and sends it again every 30 seconds while another operation holds the server.
+  A snapshot of a cloud server. The API takes snapshots only while the server is active and not booted from an ISO. Every argument is fixed at creation: changing one replaces the snapshot. The API queues snapshot operations, so Terraform follows them in the server's activity log: it fails when the server refuses the operation, and sends it again every 30 seconds while another operation holds the server. Snapshots stay in state until deletion finishes.
 ---
 
 # pidginhost_server_snapshot (Resource)
 
-A snapshot of a cloud server. The API takes snapshots only while the server is active and not booted from an ISO. Every argument is fixed at creation: changing one replaces the snapshot. The API queues snapshot operations, so Terraform follows them in the server's activity log: it fails when the server refuses the operation, and sends it again every 30 seconds while another operation holds the server.
+A snapshot of a cloud server. The API takes snapshots only while the server is active and not booted from an ISO. Every argument is fixed at creation: changing one replaces the snapshot. The API queues snapshot operations, so Terraform follows them in the server's activity log: it fails when the server refuses the operation, and sends it again every 30 seconds while another operation holds the server. Snapshots stay in state until deletion finishes.
 
 ## Example Usage
 

@@ -51,7 +51,8 @@ func (r *volumeResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			"server_id": schema.StringAttribute{
 				Required: true,
 				Description: "ID of the server the volume is attached to. Changing it detaches the volume and " +
-					"attaches it to the new server without replacing it.",
+					"attaches it to the new server without replacing it. Terraform waits until the target server " +
+					"lists the attached volume.",
 				Validators: []validator.String{numericID},
 			},
 			"alias": schema.StringAttribute{
@@ -248,7 +249,7 @@ func (r *volumeResource) ImportState(ctx context.Context, req resource.ImportSta
 }
 
 // move detaches the volume, attaches it to serverID and waits until the
-// volume names its new server.
+// target server lists the attached volume.
 func (r *volumeResource) move(ctx context.Context, id int32, serverID string) (*pidginhost.Volume, error) {
 	vm, err := parseID(serverID)
 	if err != nil {
@@ -264,7 +265,12 @@ func (r *volumeResource) move(ctx context.Context, id int32, serverID string) (*
 	if _, _, err := r.client.CloudAPI.CloudVolumesAttachCreate(ctx, id).AttachVolumeRequest(*pidginhost.NewAttachVolumeRequest(vm)).Execute(); err != nil {
 		return nil, err
 	}
-	v, err = r.waitVolume(ctx, id, func(v *pidginhost.Volume) bool { return v.Server != "" })
+	v, err = r.waitVolume(ctx, id, func(v *pidginhost.Volume) (bool, error) {
+		if !v.Attached || v.Server == "" {
+			return false, nil
+		}
+		return r.serverHasVolume(ctx, vm, id)
+	})
 	if err == nil && v == nil {
 		err = fmt.Errorf("volume %d no longer exists", id)
 	}
@@ -288,12 +294,12 @@ func (r *volumeResource) detach(ctx context.Context, id int32) (*pidginhost.Volu
 			return nil, err
 		}
 	}
-	return r.waitVolume(ctx, id, func(v *pidginhost.Volume) bool { return v.Server == "" })
+	return r.waitVolume(ctx, id, func(v *pidginhost.Volume) (bool, error) { return v.Server == "", nil })
 }
 
 // waitVolume polls the volume until done holds. It returns nil when the
 // volume no longer exists.
-func (r *volumeResource) waitVolume(ctx context.Context, id int32, done func(*pidginhost.Volume) bool) (*pidginhost.Volume, error) {
+func (r *volumeResource) waitVolume(ctx context.Context, id int32, done func(*pidginhost.Volume) (bool, error)) (*pidginhost.Volume, error) {
 	var v *pidginhost.Volume
 	err := waitFor(ctx, pollInterval, func() (bool, error) {
 		got, httpResp, err := r.client.CloudAPI.CloudVolumesRetrieve(ctx, id).Execute()
@@ -305,7 +311,7 @@ func (r *volumeResource) waitVolume(ctx context.Context, id int32, done func(*pi
 			return false, err
 		}
 		v = got
-		return done(got), nil
+		return done(got)
 	})
 	return v, err
 }

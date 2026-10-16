@@ -171,6 +171,41 @@ func TestRouteRefusesThePlatformRoute(t *testing.T) {
 	}
 }
 
+func TestPlatformRouteCannotBeWritten(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		t.Run(operation, func(t *testing.T) {
+			var log requestLog
+			r := &kubernetesRouteResource{client: testKubernetesAPI(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				log.add(req)
+				k8sReply(w, http.StatusOK, platformRouteJSON)
+			}))}
+			m := kubernetesRouteModel{ID: types.StringValue("1"), ClusterID: types.StringValue("7"),
+				Protocol: types.StringValue("tcp"), Name: types.StringValue("kube-apiserver"), Namespace: types.StringValue("envoy-gw"),
+				Port: types.Int64Value(8443), BackendServiceName: types.StringValue("other"), BackendServicePort: types.Int64Value(443)}
+			plan := tfsdk.Plan(testRouteState(t, m))
+			if operation == "create" {
+				resp := fwresource.CreateResponse{State: testRouteState(t, kubernetesRouteModel{})}
+				r.Create(t.Context(), fwresource.CreateRequest{Plan: plan}, &resp)
+				if !resp.Diagnostics.HasError() {
+					t.Error("platform route creation was accepted")
+				}
+			} else {
+				resp := fwresource.UpdateResponse{State: testRouteState(t, m)}
+				r.Update(t.Context(), fwresource.UpdateRequest{Plan: plan}, &resp)
+				if !resp.Diagnostics.HasError() {
+					t.Error("platform route update was accepted")
+				}
+			}
+			if log.String() != "" {
+				t.Fatal("sent a write for the platform route")
+			}
+			if routeConfigProblems(m)["name"] == "" {
+				t.Fatal("platform route was not refused during validation")
+			}
+		})
+	}
+}
+
 func testRouteState(t *testing.T, m kubernetesRouteModel) tfsdk.State {
 	t.Helper()
 	ctx := context.Background()

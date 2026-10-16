@@ -3,12 +3,12 @@
 page_title: "pidginhost_kubernetes_lb_firewall Resource - pidginhost"
 subcategory: ""
 description: |-
-  The firewall rules of the load balancer of a Kubernetes cluster. The rule list is authoritative: rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules.
+  The firewall rules of the load balancer of a Kubernetes cluster. The rule list is authoritative: rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules. Omitting the list or setting it to [] removes all rules. If creation fails after changes begin, Terraform keeps the resource in state for cleanup.
 ---
 
 # pidginhost_kubernetes_lb_firewall (Resource)
 
-The firewall rules of the load balancer of a Kubernetes cluster. The rule list is authoritative: rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules.
+The firewall rules of the load balancer of a Kubernetes cluster. The rule list is authoritative: rules the load balancer has that are not listed are deleted, and destroying the resource deletes all rules. Omitting the list or setting it to [] removes all rules. If creation fails after changes begin, Terraform keeps the resource in state for cleanup.
 
 ## Example Usage
 

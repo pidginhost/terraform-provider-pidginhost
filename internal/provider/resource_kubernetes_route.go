@@ -168,6 +168,9 @@ func routeConfigProblems(m kubernetesRouteModel) map[string]string {
 	}
 	protocol := m.Protocol.ValueString()
 	problems := map[string]string{}
+	if platformRoute(protocol, m.Name.ValueString(), m.Namespace.ValueString()) {
+		problems["name"] = "The route the platform keeps for the Kubernetes API cannot be managed."
+	}
 	if protocol == "http" {
 		if !m.Port.IsNull() {
 			problems["port"] = "port is only valid for tcp and udp routes."
@@ -197,6 +200,10 @@ func (r *kubernetesRouteResource) Create(ctx context.Context, req resource.Creat
 	var plan kubernetesRouteModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if platformRoute(plan.Protocol.ValueString(), plan.Name.ValueString(), plan.Namespace.ValueString()) {
+		resp.Diagnostics.AddError("Platform route", "The route the platform keeps for the Kubernetes API cannot be created.")
 		return
 	}
 	clusterID, err := parseID(plan.ClusterID.ValueString())
@@ -285,6 +292,10 @@ func (r *kubernetesRouteResource) Update(ctx context.Context, req resource.Updat
 	var plan kubernetesRouteModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if platformRoute(plan.Protocol.ValueString(), plan.Name.ValueString(), plan.Namespace.ValueString()) {
+		resp.Diagnostics.AddError("Platform route", "The route the platform keeps for the Kubernetes API cannot be changed.")
 		return
 	}
 	clusterID, err := parseID(plan.ClusterID.ValueString())

@@ -168,6 +168,8 @@ func TestBucketCredentialsErrorsNeverQuoteTheKeys(t *testing.T) {
 	}{
 		{http.StatusOK, `{"access_key":"AKIA-LEAK","secret_key":"s3cr3t-LEAK"}`},
 		{http.StatusBadRequest, `{"detail":"s3cr3t-LEAK"}`},
+		// JSON decoding can quote a numeric value from a malformed response.
+		{http.StatusOK, `{"secret_key":12345678901234567890e9999}`},
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -190,8 +192,8 @@ func TestBucketCredentialsErrorsNeverQuoteTheKeys(t *testing.T) {
 			t.Fatalf("status %d: expected an error", tc.status)
 		}
 		for _, d := range created.Diagnostics {
-			if strings.Contains(d.Summary()+d.Detail(), "LEAK") {
-				t.Fatalf("status %d: error quotes the response body: %s", tc.status, d.Detail())
+			if strings.Contains(d.Summary()+d.Detail(), "LEAK") || strings.Contains(d.Detail(), "12345678901234567890") {
+				t.Fatalf("status %d: error quotes the response body", tc.status)
 			}
 		}
 	}
