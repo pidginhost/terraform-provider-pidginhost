@@ -105,9 +105,15 @@ func (r *kubernetesClusterResource) Schema(ctx context.Context, _ resource.Schem
 				},
 			},
 			"enable_gateway_api": schema.BoolAttribute{
-				Optional:      true,
-				Description:   "Enable the Gateway API. The API enables it when not set. Changing, setting or removing it replaces the cluster. The API does not return this setting; leave it unset after import to keep the existing cluster.",
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				Optional: true,
+				Computed: true,
+				Description: "Enable the Gateway API, on by default. Changing it replaces the cluster; removing it from " +
+					"the configuration keeps the current setting. The API does not report it, so after an import it " +
+					"stays empty until set, and setting it then replaces the cluster.",
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 			"dual_stack": schema.BoolAttribute{
 				Optional: true,
@@ -264,6 +270,10 @@ func (r *kubernetesClusterResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 	plan.ID = types.StringValue(id)
+	if plan.EnableGatewayAPI.IsUnknown() {
+		// What the API does when the request leaves it out.
+		plan.EnableGatewayAPI = types.BoolValue(true)
+	}
 	if r.reload(ctx, &plan, &resp.Diagnostics) {
 		resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 	}

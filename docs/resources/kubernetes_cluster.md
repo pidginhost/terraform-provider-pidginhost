@@ -41,7 +41,7 @@ resource "pidginhost_kubernetes_cluster" "example" {
 
 - `acknowledge_workload_restart` (Boolean) Accept that changing encryption restarts the workloads of the cluster.
 - `dual_stack` (Boolean) IPv6 dual stack for pods, services and the cluster private network. The API ignores it where the platform does not offer dual stack. Changing it replaces the cluster.
-- `enable_gateway_api` (Boolean) Enable the Gateway API. The API enables it when not set. Changing, setting or removing it replaces the cluster. The API does not return this setting; leave it unset after import to keep the existing cluster.
+- `enable_gateway_api` (Boolean) Enable the Gateway API, on by default. Changing it replaces the cluster; removing it from the configuration keeps the current setting. The API does not report it, so after an import it stays empty until set, and setting it then replaces the cluster.
 - `encryption` (String) WireGuard encryption of pod traffic: disabled or enabled. Changing it restarts the workloads and requires acknowledge_workload_restart = true.
 - `features` (Set of String) Optional cluster features: cert-manager, ceph-csi, metrics-server, cloudnative-pg, mariadb-operator, mongodb-operator, lb-envoy-metrics. They install in the background after a change.
 - `generation` (String) Hardware generation slug. Changing it replaces the cluster.
