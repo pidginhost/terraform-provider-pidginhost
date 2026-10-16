@@ -101,6 +101,12 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 	return []func() resource.Resource{
 		NewServerResource,
 		NewSSHKeyResource,
+		NewVolumeResource,
+		NewFirewallResource,
+		NewPublicIPResource,
+		NewFloatingIPResource,
+		NewPrivateNetworkResource,
+		NewPrivateNetworkMemberResource,
 	}
 }
 
