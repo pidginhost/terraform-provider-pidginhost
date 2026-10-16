@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -407,5 +408,32 @@ func TestDeleteClusterReportsAStuckDeletion(t *testing.T) {
 	err := deleteCluster(context.Background(), testKubernetesAPI(t, mux), "7", false)
 	if err == nil || err.Error() != "the cluster was not deleted; it is failed" {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestFirstPoolChangesStopThePlanInsteadOfReplacing(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name        string
+		state, plan types.Int64
+		wantError   bool
+	}{
+		{"resize after create", types.Int64Value(1), types.Int64Value(3), true},
+		{"unchanged", types.Int64Value(1), types.Int64Value(1), false},
+		{"filled in after import", types.Int64Null(), types.Int64Value(3), false},
+		{"removed from config", types.Int64Value(1), types.Int64Null(), false},
+	} {
+		resp := planmodifier.Int64Response{PlanValue: tc.plan}
+		firstPoolInt64{}.PlanModifyInt64(ctx, planmodifier.Int64Request{StateValue: tc.state, PlanValue: tc.plan}, &resp)
+		if resp.Diagnostics.HasError() != tc.wantError || resp.RequiresReplace {
+			t.Fatalf("%s: error %v replace %v", tc.name, resp.Diagnostics, resp.RequiresReplace)
+		}
+	}
+	resp := planmodifier.StringResponse{}
+	firstPoolString{}.PlanModifyString(ctx, planmodifier.StringRequest{
+		StateValue: types.StringValue("k8s-2"), PlanValue: types.StringValue("k8s-4"),
+	}, &resp)
+	if !resp.Diagnostics.HasError() || resp.RequiresReplace {
+		t.Fatalf("package change: %v", resp.Diagnostics)
 	}
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -87,14 +86,14 @@ func (r *kubernetesClusterResource) Schema(ctx context.Context, _ resource.Schem
 			},
 			"resource_pool_package": schema.StringAttribute{
 				Required:      true,
-				Description:   "ID or slug of the worker package of the first resource pool. Changing it replaces the cluster.",
-				PlanModifiers: []planmodifier.String{replaceStringIfChanged()},
+				Description:   "ID or slug of the worker package of the first resource pool. Only used when the cluster is created.",
+				PlanModifiers: []planmodifier.String{firstPoolString{}},
 			},
 			"resource_pool_size": schema.Int64Attribute{
 				Optional:      true,
-				Description:   "Number of workers in the first resource pool. The cluster type minimum when not set. Changing it replaces the cluster.",
+				Description:   "Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created; resize the pool with pidginhost_kubernetes_node_pool.",
 				Validators:    []validator.Int64{int64validator.AtLeast(1)},
-				PlanModifiers: []planmodifier.Int64{replaceInt64IfChanged()},
+				PlanModifiers: []planmodifier.Int64{firstPoolInt64{}},
 			},
 			"generation": schema.StringAttribute{
 				Optional:    true,
@@ -519,16 +518,43 @@ func clusterFeatures(ctx context.Context, set types.Set, diags *diag.Diagnostics
 // cluster; only a change from one set value to another does.
 const replaceIfChangedDescription = "Changing the value replaces the cluster. Setting or removing it does not."
 
-func replaceStringIfChanged() planmodifier.String {
-	return stringplanmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
-		resp.RequiresReplace = !req.StateValue.IsNull() && !req.PlanValue.IsNull()
-	}, replaceIfChangedDescription, replaceIfChangedDescription)
+// The first resource pool is described on the cluster only to create it.
+// Changing those values later would otherwise replace the whole cluster, so
+// the plan stops with a pointer to the pool's own resource instead.
+const firstPoolChanged = "The first resource pool is only described here to create the cluster, and changing it " +
+	"would replace the cluster. Resize or replace the pool through pidginhost_kubernetes_node_pool (import it by " +
+	"\"<cluster_id>/<pool_id>\"), and set this value back to %s."
+
+type firstPoolString struct{}
+
+func (firstPoolString) Description(context.Context) string {
+	return "only used when the cluster is created"
+}
+func (firstPoolString) MarkdownDescription(context.Context) string {
+	return "only used when the cluster is created"
+}
+func (firstPoolString) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.StateValue.IsNull() || req.PlanValue.IsNull() || req.PlanValue.IsUnknown() || req.PlanValue.Equal(req.StateValue) {
+		return
+	}
+	resp.Diagnostics.AddAttributeError(req.Path, "Only used when the cluster is created",
+		fmt.Sprintf(firstPoolChanged, strconv.Quote(req.StateValue.ValueString())))
 }
 
-func replaceInt64IfChanged() planmodifier.Int64 {
-	return int64planmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.Int64Request, resp *int64planmodifier.RequiresReplaceIfFuncResponse) {
-		resp.RequiresReplace = !req.StateValue.IsNull() && !req.PlanValue.IsNull()
-	}, replaceIfChangedDescription, replaceIfChangedDescription)
+type firstPoolInt64 struct{}
+
+func (firstPoolInt64) Description(context.Context) string {
+	return "only used when the cluster is created"
+}
+func (firstPoolInt64) MarkdownDescription(context.Context) string {
+	return "only used when the cluster is created"
+}
+func (firstPoolInt64) PlanModifyInt64(_ context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
+	if req.StateValue.IsNull() || req.PlanValue.IsNull() || req.PlanValue.IsUnknown() || req.PlanValue.Equal(req.StateValue) {
+		return
+	}
+	resp.Diagnostics.AddAttributeError(req.Path, "Only used when the cluster is created",
+		fmt.Sprintf(firstPoolChanged, strconv.FormatInt(req.StateValue.ValueInt64(), 10)))
 }
 
 func replaceBoolIfChanged() planmodifier.Bool {
