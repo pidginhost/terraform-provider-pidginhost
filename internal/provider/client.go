@@ -47,10 +47,11 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for attempt := 1; ; attempt++ {
 		resp, err := t.base.RoundTrip(req)
 		throttled := err == nil && resp.StatusCode == http.StatusTooManyRequests
-		if attempt >= t.attempts || !(throttled || read && retryable(resp, err)) {
+		shouldRetry := throttled || read && retryable(resp, err)
+		if attempt >= t.attempts || !shouldRetry {
 			return resp, err
 		}
-		if !read {
+		if req.Body != nil && req.Body != http.NoBody {
 			if req.GetBody == nil {
 				return resp, err
 			}
@@ -66,10 +67,13 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if after := retryAfter(resp.Header.Get("Retry-After")); after > 0 {
 				wait = after
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		select {
 		case <-req.Context().Done():
+			if req.Body != nil {
+				_ = req.Body.Close()
+			}
 			return nil, req.Context().Err()
 		case <-time.After(wait):
 		}

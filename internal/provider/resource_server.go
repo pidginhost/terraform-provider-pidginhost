@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -72,8 +71,6 @@ type serverModel struct {
 	Timeouts              timeouts.Value `tfsdk:"timeouts"`
 }
 
-var numericOnly = regexp.MustCompile(`^[0-9]+$`)
-
 // notNumeric refuses an id where the API echoes a slug or name back, which
 // would otherwise show as a change on every plan.
 func notNumeric(what string) validator.String {
@@ -101,16 +98,14 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 	}
 	computedString := func(desc string) schema.StringAttribute {
 		return schema.StringAttribute{
-			Computed:      true,
-			Description:   desc,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			Computed:    true,
+			Description: desc,
 		}
 	}
 	computedInt := func(desc string) schema.Int64Attribute {
 		return schema.Int64Attribute{
-			Computed:      true,
-			Description:   desc,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+			Computed:    true,
+			Description: desc,
 		}
 	}
 	policy := func(direction string) schema.StringAttribute {
@@ -139,12 +134,12 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			},
 			"image": schema.StringAttribute{
 				Required:      true,
-				Description:   "Operating system image slug, from the pidginhost_images data source. Changing it replaces the server.",
+				Description:   "Operating system image slug from the PidginHost API or panel. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"package": schema.StringAttribute{
 				Required: true,
-				Description: "Server package slug, from the pidginhost_packages data source. Changing it resizes the " +
+				Description: "Server package slug from the PidginHost API or panel. Changing it resizes the " +
 					"server in place; the API refuses packages with a smaller disk.",
 				Validators: []validator.String{notNumeric("package slug")},
 			},
@@ -210,8 +205,8 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			"fw_rules_set": schema.StringAttribute{
 				Optional: true,
 				Computed: true,
-				Description: "Name of the firewall rule set applied to the public interface, for example " +
-					"pidginhost_firewall.web.name. An empty string removes it. Some packages, such as the free tier, " +
+				Description: "Name of an existing firewall rule set applied to the public interface. " +
+					"An empty string removes it. Some packages, such as the free tier, " +
 					"keep their own firewall.",
 				Validators:    []validator.String{notNumeric("rule set name")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -304,6 +299,7 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 			resp.Diagnostics.Append(apiError("Enabling destroy protection", err))
 			return
 		}
+		server.DestroyProtection = true
 	}
 
 	resp.Diagnostics.Append(r.refresh(ctx, &plan, server)...)
@@ -450,7 +446,7 @@ func (r *serverResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	// A server already being cancelled is not deleted twice.
-	if status := string(server.Status); status != "cancelling" && status != "terminating" {
+	if status := string(server.Status); status != "cancelling" && status != "terminating" && !isGone(status) {
 		httpResp, err := r.client.CloudAPI.CloudServersDestroy(ctx, id).Execute()
 		if err != nil && !isNotFound(httpResp, err) {
 			resp.Diagnostics.Append(apiError("Deleting server", err))
@@ -477,8 +473,7 @@ func (r *serverResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	for _, address := range addresses {
 		if err := address.release(ctx, r.client); err != nil {
 			resp.Diagnostics.AddWarning("Public address "+address.address+" was not released",
-				"The server is deleted but this address is still on the account and billed. Release it in the panel "+
-					"or import it as pidginhost_public_ip and destroy it. Cause: "+describeError(err))
+				"The server is deleted but this address is still on the account and billed. Release it in the panel. Cause: "+describeError(err))
 		}
 	}
 }
@@ -504,6 +499,8 @@ func (r *serverResource) waitUntilActive(ctx context.Context, id int32, done fun
 		switch s.Status {
 		case "failed":
 			return false, fmt.Errorf("server %d failed to provision", id)
+		case "cancelling", "cancelled", "terminating", "terminated":
+			return false, fmt.Errorf("server %d cannot become active: status is %s", id, s.Status)
 		case "active":
 			return done == nil || done(s), nil
 		}
@@ -516,9 +513,15 @@ func (r *serverResource) waitUntilActive(ctx context.Context, id int32, done fun
 }
 
 func (r *serverResource) setDestroyProtection(ctx context.Context, id int32, on bool) error {
-	_, _, err := r.client.CloudAPI.CloudServersDestroyProtectionCreate(ctx, id).
+	applied, _, err := r.client.CloudAPI.CloudServersDestroyProtectionCreate(ctx, id).
 		DestroyProtectionRequest(*pidginhost.NewDestroyProtectionRequest(on)).Execute()
-	return err
+	if err != nil {
+		return err
+	}
+	if applied.DestroyProtection != on {
+		return fmt.Errorf("the API did not apply destroy_protection = %t for server %d", on, id)
+	}
+	return nil
 }
 
 func firewallChanged(plan, state serverModel) bool {
@@ -599,7 +602,7 @@ func (r *serverResource) refresh(ctx context.Context, m *serverModel, s *pidginh
 	switch {
 	case isNotFound(httpResp, err):
 		// No public address, so no firewall.
-		m.FwRulesSet = keepOrEmpty(m.FwRulesSet)
+		m.FwRulesSet = types.StringValue("")
 		m.FwPolicyIn = types.StringNull()
 		m.FwPolicyOut = types.StringNull()
 	case err != nil:
@@ -610,13 +613,6 @@ func (r *serverResource) refresh(ctx context.Context, m *serverModel, s *pidginh
 		m.FwPolicyOut = types.StringValue(string(iface.GetFwPolicyOut()))
 	}
 	return diags
-}
-
-func keepOrEmpty(v types.String) types.String {
-	if v.IsUnknown() || v.IsNull() {
-		return types.StringValue("")
-	}
-	return v
 }
 
 func policyValue(v types.String) *pidginhost.FwPolicyOutEnum {

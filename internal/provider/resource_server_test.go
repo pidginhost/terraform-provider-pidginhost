@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
@@ -40,8 +41,13 @@ func TestUpgradeServerV0KeepsServerAndNamesDroppedObjects(t *testing.T) {
 	if m.DestroyPublicIPv4.ValueBool() || !m.DestroyPublicIPv6.ValueBool() {
 		t.Fatalf("destroy flags: %v %v", m.DestroyPublicIPv4, m.DestroyPublicIPv6)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0], `id = "9"`) || !strings.Contains(notes[1], `id = "7"`) {
+	if len(notes) != 2 || !strings.Contains(notes[0], "id 9") || !strings.Contains(notes[1], "id 7") {
 		t.Fatalf("notes: %q", notes)
+	}
+	for _, note := range notes {
+		if strings.Contains(note, "import {") {
+			t.Fatal("upgrade recommends importing into unavailable resources")
+		}
 	}
 
 	old.FirewallRulesCreate = types.BoolValue(false) // a set the user brought, not one 0.1.x made
@@ -82,13 +88,21 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch path := r.URL.Path; {
 	case r.Method == http.MethodPost && path == "/api/cloud/servers/":
+		hostname, _ := body["hostname"].(string)
+		if hostname == "" {
+			hostname = "generated"
+		}
+		public := map[string]any{}
+		if body["new_ipv4"] == true {
+			public["ipv4"] = "192.0.2.10"
+		}
 		f.detail = map[string]any{
-			"id": 101, "hostname": body["hostname"], "image": body["image"], "package": body["package"],
+			"id": 101, "hostname": hostname, "image": body["image"], "package": body["package"],
 			"cpus": 1, "memory": 1, "disk_size": 20, "generation": "gp", "machine": map[string]any{},
 			"volumes": []any{}, "floating_ips": []any{}, "status": "provisioning", "username": "ubuntu",
 			"destroy_protection": false, "ha_enabled": false, "custom_os": false, "rescue_mode": false,
 			"boot_iso": nil, "rescue_supported": true, "project": "",
-			"networks": map[string]any{"public": map[string]any{"ipv4": "192.0.2.10"}, "private": []any{}},
+			"networks": map[string]any{"public": public, "private": []any{}},
 		}
 		f.reads = 0
 		reply(http.StatusCreated, map[string]any{"id": 101})
@@ -103,10 +117,11 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusNotFound, map[string]any{"detail": "Not found."})
 			return
 		}
-		if f.reads >= 3 {
+		if f.reads >= 3 && (f.detail["status"] == "provisioning" || f.detail["status"] == "upgrading") {
 			f.detail["status"] = "active"
 			if f.upgradeTo != "" {
 				f.detail["package"], f.upgradeTo = f.upgradeTo, ""
+				f.detail["cpus"], f.detail["memory"], f.detail["disk_size"] = 2, 4, 40
 			}
 		}
 		reply(http.StatusOK, f.detail)
@@ -125,6 +140,10 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.detail["destroy_protection"] = body["destroy_protection"]
 		reply(http.StatusOK, map[string]any{"destroy_protection": body["destroy_protection"]})
 	case path == "/api/cloud/servers/101/public-interface/":
+		if len(f.detail["networks"].(map[string]any)["public"].(map[string]any)) == 0 {
+			reply(http.StatusNotFound, map[string]any{"detail": "No public interface."})
+			return
+		}
 		reply(http.StatusOK, map[string]any{
 			"interface": "eth0", "ipv4": "192.0.2.10", "ipv6": "",
 			"fw_rules_set": nil, "fw_policy_in": "DROP", "fw_policy_out": "ACCEPT",
@@ -148,13 +167,15 @@ func TestServerLifecycleAgainstFakeAPI(t *testing.T) {
 	fake := newFakeServerAPI()
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	t.Setenv("PIDGINHOST_TOKEN", "test")
-	t.Setenv("PIDGINHOST_BASE_URL", srv.URL)
 	defer func(old time.Duration) { pollInterval = old }(pollInterval)
 	pollInterval = 10 * time.Millisecond
 
 	config := func(pkg string, protected bool) string {
 		return fmt.Sprintf(`
+provider "pidginhost" {
+  token = "test"
+  base_url = %q
+}
 resource "pidginhost_server" "test" {
   hostname            = "web1"
   image               = "ubuntu-24"
@@ -164,7 +185,7 @@ resource "pidginhost_server" "test" {
   destroy_protection  = %t
   destroy_public_ipv4 = true
 }
-`, pkg, protected)
+`, srv.URL, pkg, protected)
 	}
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProviders,
@@ -179,8 +200,14 @@ resource "pidginhost_server" "test" {
 			},
 			{
 				Config: config("cloudv-2", true),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("pidginhost_server.test", plancheck.ResourceActionUpdate),
+				}},
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("package"), knownvalue.StringExact("cloudv-2")),
+					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("cpus"), knownvalue.Int64Exact(2)),
+					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("memory"), knownvalue.Int64Exact(4)),
+					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("disk_size"), knownvalue.Int64Exact(40)),
 					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("destroy_protection"), knownvalue.Bool(true)),
 				},
 			},
@@ -207,6 +234,50 @@ resource "pidginhost_server" "test" {
 			return nil
 		},
 	})
+}
+
+func TestServerOptionalComputedDefaults(t *testing.T) {
+	for _, network := range []string{"new_ipv4 = true", "no_network_acknowledged = true"} {
+		t.Run(network, func(t *testing.T) {
+			fake := newFakeServerAPI()
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
+			old := pollInterval
+			pollInterval = time.Millisecond
+			t.Cleanup(func() { pollInterval = old })
+			config := func(extra string) string {
+				return fmt.Sprintf(`
+provider "pidginhost" {
+  token = "test"
+  base_url = %q
+}
+resource "pidginhost_server" "test" {
+  image = "ubuntu-24"
+  package = "cloudv-1"
+  %s
+  %s
+}
+`, srv.URL, network, extra)
+			}
+			resource.UnitTest(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProviders,
+				Steps: []resource.TestStep{
+					{Config: config(""), ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("hostname"), knownvalue.StringExact("generated")),
+					}},
+					{Config: config(`project = "example"`), ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("pidginhost_server.test", plancheck.ResourceActionUpdate),
+					}}},
+					{Config: config(""), ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("pidginhost_server.test", plancheck.ResourceActionNoop),
+					}}},
+					{Config: config(`project = ""`), ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("project"), knownvalue.StringExact("")),
+					}},
+				},
+			})
+		})
+	}
 }
 
 func TestAccServer(t *testing.T) {
