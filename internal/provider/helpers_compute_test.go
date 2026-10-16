@@ -118,3 +118,14 @@ func testAccServerIDs(t *testing.T, n int) []string {
 	}
 	return ids[:n]
 }
+
+func TestSplitImportID(t *testing.T) {
+	if parts, ok := splitImportID("4/123", 2); !ok || parts[0] != "4" || parts[1] != "123" {
+		t.Fatalf("got %v, %v", parts, ok)
+	}
+	for _, bad := range []string{"123", "4/", "/123", "4/1/2"} {
+		if _, ok := splitImportID(bad, 2); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
