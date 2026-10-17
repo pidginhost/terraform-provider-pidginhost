@@ -46,8 +46,7 @@ func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *volumeResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A storage volume attached to a cloud server. If provisioning fails after allocation, " +
-			"Terraform keeps the volume, attachment and configured timeouts in state for cleanup.",
+		Description: "A storage volume attached to a cloud server.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"server_id": schema.StringAttribute{

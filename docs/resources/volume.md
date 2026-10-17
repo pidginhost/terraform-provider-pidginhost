@@ -3,12 +3,12 @@
 page_title: "pidginhost_volume Resource - pidginhost"
 subcategory: ""
 description: |-
-  A storage volume attached to a cloud server. If provisioning fails after allocation, Terraform keeps the volume, attachment and configured timeouts in state for cleanup.
+  A storage volume attached to a cloud server.
 ---
 
 # pidginhost_volume (Resource)
 
-A storage volume attached to a cloud server. If provisioning fails after allocation, Terraform keeps the volume, attachment and configured timeouts in state for cleanup.
+A storage volume attached to a cloud server.
 
 ## Example Usage
 

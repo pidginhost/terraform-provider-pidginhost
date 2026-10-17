@@ -100,8 +100,8 @@ func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			"changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, " +
 			"SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host " +
 			"names in cname, exchange and target are compared without case and trailing dot. " +
-			"The root target (.) is preserved on import. TTL changes are checked against the stored record. " +
-			"Destroying a record also succeeds if its zone has already been deactivated.",
+			"A target of . (a null MX or SRV record) is kept as is. Destroying a record succeeds if its zone " +
+			"is already deactivated.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -133,7 +133,7 @@ func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:    true,
 				Computed:    true,
 				Default:     int64default.StaticInt64(14400),
-				Description: "Time to live in seconds, from 1 to 2147483647. Defaults to 14400.",
+				Description: "Time to live in seconds. Defaults to 14400.",
 				Validators:  []validator.Int64{int64validator.Between(1, math.MaxInt32)},
 			},
 			"address":    text("IPv4 address of an A record, or IPv6 address of an AAAA record."),
@@ -263,10 +263,9 @@ func (r *dnsRecordResource) Update(ctx context.Context, req resource.UpdateReque
 		resp.Diagnostics.Append(apiError("Updating DNS record", err))
 		return
 	}
-	// An accepted edit echoes the zone backend payload with string-valued
-	// numbers, which the SDK's typed response cannot decode. Read the actual
-	// record after every accepted write and require the requested TTL before
-	// saving state, regardless of whether the response body decoded.
+	// Older API versions answered an edit with string-valued numbers the SDK
+	// cannot decode. Confirm the saved TTL from the record list instead of
+	// trusting the response body.
 	records, _, err = r.list(ctx, &plan)
 	if err != nil {
 		resp.Diagnostics.Append(apiError("Verifying DNS record update", err))

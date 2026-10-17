@@ -3,12 +3,12 @@
 page_title: "pidginhost_dns_record Resource - pidginhost"
 subcategory: ""
 description: |-
-  A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. The root target (.) is preserved on import. TTL changes are checked against the stored record. Destroying a record also succeeds if its zone has already been deactivated.
+  A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. A target of . (a null MX or SRV record) is kept as is. Destroying a record succeeds if its zone is already deactivated.
 ---
 
 # pidginhost_dns_record (Resource)
 
-A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. The root target (.) is preserved on import. TTL changes are checked against the stored record. Destroying a record also succeeds if its zone has already been deactivated.
+A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. A target of . (a null MX or SRV record) is kept as is. Destroying a record succeeds if its zone is already deactivated.
 
 ## Example Usage
 
@@ -72,7 +72,7 @@ resource "pidginhost_dns_record" "caa" {
 - `source` (String) internal for a domain registered with PidginHost, external for a domain added to the account in the PidginHost panel. Defaults to internal. Changing it replaces the resource.
 - `tag` (String) Tag of a CAA record, such as issue, issuewild or iodef.
 - `target` (String) Target host name of an SRV record.
-- `ttl` (Number) Time to live in seconds, from 1 to 2147483647. Defaults to 14400.
+- `ttl` (Number) Time to live in seconds. Defaults to 14400.
 - `txtdata` (String) Text of a TXT record, without quotes.
 - `value` (String) Value of a CAA record, such as letsencrypt.org.
 - `weight` (Number) Weight of an SRV record.

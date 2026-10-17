@@ -56,9 +56,7 @@ func (r *kubernetesNodePoolResource) Schema(ctx context.Context, _ resource.Sche
 	resp.Schema = schema.Schema{
 		Description: "A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package " +
 			"and generation. The first pool, created with the cluster, can be imported and managed here too. " +
-			"Pool changes in the same cluster run one at a time within a provider instance. Shrinking and deleting " +
-			"wait for their own removal operation; failed removals or missing journals return an error. Failed creation keeps deletion " +
-			"consent and timeouts in state for cleanup.",
+			"Pool changes in the same cluster run one at a time.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:      true,
@@ -87,7 +85,7 @@ func (r *kubernetesNodePoolResource) Schema(ctx context.Context, _ resource.Sche
 			},
 			"size": schema.Int64Attribute{
 				Required: true,
-				Description: "Number of workers, from 1 to 2147483647, subject to the cluster type limits. " +
+				Description: "Number of workers, within the cluster type limits. " +
 					"It changes in place; shrinking drains the removed workers and needs " +
 					"local_data_loss_accepted = true.",
 				Validators: []validator.Int64{int64validator.Between(1, math.MaxInt32)},
