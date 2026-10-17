@@ -124,7 +124,7 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 
 	resp.Schema = schema.Schema{
 		Version:     1,
-		Description: "A cloud server. API errors omit response details when a password or startup script is submitted.",
+		Description: "A cloud server.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"hostname": schema.StringAttribute{
@@ -326,13 +326,9 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	body.FwPolicyIn = policyValue(plan.FwPolicyIn)
 	body.FwPolicyOut = policyValue(plan.FwPolicyOut)
 
-	created, httpResp, err := r.client.CloudAPI.CloudServersCreate(ctx).ServerAddRequest(*body).Execute()
+	created, _, err := r.client.CloudAPI.CloudServersCreate(ctx).ServerAddRequest(*body).Execute()
 	if err != nil {
-		if body.Password != nil || body.UserData != nil {
-			resp.Diagnostics.Append(secretRouteError("Creating server", httpResp, err))
-		} else {
-			resp.Diagnostics.Append(apiError("Creating server", err))
-		}
+		resp.Diagnostics.Append(redactedAPIError("Creating server", err, body.Password, body.UserData))
 		return
 	}
 	// Saved before waiting: a server that fails to provision is still billed,
@@ -436,12 +432,8 @@ func (r *serverResource) Update(ctx context.Context, req resource.UpdateRequest,
 		patch.SshPubKey, changed = optionalString(plan.SSHPubKey), true
 	}
 	if changed {
-		if _, httpResp, err := r.client.CloudAPI.CloudServersPartialUpdate(ctx, id).PatchedServerDetailRequest(patch).Execute(); err != nil {
-			if patch.Password != nil {
-				resp.Diagnostics.Append(secretRouteError("Updating server", httpResp, err))
-			} else {
-				resp.Diagnostics.Append(apiError("Updating server", err))
-			}
+		if _, _, err := r.client.CloudAPI.CloudServersPartialUpdate(ctx, id).PatchedServerDetailRequest(patch).Execute(); err != nil {
+			resp.Diagnostics.Append(redactedAPIError("Updating server", err, patch.Password))
 			return
 		}
 	}

@@ -144,6 +144,18 @@ func secretRouteError(summary string, resp *http.Response, err error) diag.Diagn
 	return diag.NewErrorDiagnostic(summary, detail+" (response details withheld: they can carry credentials)")
 }
 
+// redactedAPIError is apiError for a request that carried secrets. The API's
+// reason stays; any echo of a submitted secret is cut out.
+func redactedAPIError(summary string, err error, secrets ...*string) diag.Diagnostic {
+	detail := describeError(err)
+	for _, secret := range secrets {
+		if secret != nil && *secret != "" {
+			detail = strings.ReplaceAll(detail, *secret, "(redacted)")
+		}
+	}
+	return diag.NewErrorDiagnostic(summary, detail)
+}
+
 func describeError(err error) string {
 	var apiErr *pidginhost.GenericOpenAPIError
 	if errors.As(err, &apiErr) {

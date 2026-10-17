@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -113,13 +114,21 @@ resource "terraform_data" %q {
 	})
 }
 
-func TestServerSecretErrorsWithholdResponse(t *testing.T) {
+// The API's reason for refusing a request stays in the error, but an echo of
+// the submitted password or script does not.
+func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
+	const script = "#!/bin/sh\ntoken=test-script-secret\n"
 	for _, operation := range []string{"create password", "create script", "update password"} {
 		t.Run(operation, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&body)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = fmt.Fprint(w, `{"detail":"test-response-marker"}`)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"package": []string{"Unknown package."},
+					"detail":  fmt.Sprintf("refused %v %v", body["password"], body["user_data"]),
+				})
 			}))
 			defer srv.Close()
 			r := &serverResource{client: newAPIClient("test", srv.URL, "test")}
@@ -128,9 +137,9 @@ func TestServerSecretErrorsWithholdResponse(t *testing.T) {
 			state := serverTestPlan(t, model)
 			configModel := model
 			if operation == "create script" {
-				configModel.UserDataWO = types.StringValue("#!/bin/sh\ntrue\n")
+				configModel.UserDataWO = types.StringValue(script)
 			} else {
-				configModel.PasswordWO = types.StringValue("test-input")
+				configModel.PasswordWO = types.StringValue("test-password-secret")
 				model.PasswordWOVersion = types.Int64Value(1)
 			}
 			plan := serverTestPlan(t, model)
@@ -148,10 +157,15 @@ func TestServerSecretErrorsWithholdResponse(t *testing.T) {
 			if !diags.HasError() {
 				t.Fatal("expected a request error")
 			}
+			text := ""
 			for _, d := range diags {
-				if strings.Contains(d.Summary()+d.Detail(), "test-response-marker") {
-					t.Fatal("server error exposed the response body")
-				}
+				text += d.Summary() + " " + d.Detail()
+			}
+			if strings.Contains(text, "test-password-secret") || strings.Contains(text, "test-script-secret") {
+				t.Fatalf("the error repeats the submitted secret: %q", text)
+			}
+			if !strings.Contains(text, "Unknown package.") {
+				t.Fatalf("the error lost the API's reason: %q", text)
 			}
 		})
 	}
