@@ -3,12 +3,12 @@
 page_title: "pidginhost_server Resource - pidginhost"
 subcategory: ""
 description: |-
-  A cloud server.
+  A cloud server. API errors omit response details when a password or startup script is submitted.
 ---
 
 # pidginhost_server (Resource)
 
-A cloud server.
+A cloud server. API errors omit response details when a password or startup script is submitted.
 
 ## Example Usage
 
@@ -85,7 +85,7 @@ output "web_ipv4" {
 - `ssh_pub_key` (String) Public key installed for SSH login. Changing it regenerates cloud-init and reboots a running server. An empty string removes it from future cloud-init data but does not revoke keys already in the guest.
 - `ssh_pub_key_id` (String) Id or fingerprint of an SSH key stored on the account, installed at creation. Changing it replaces the server.
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
-- `user_data` (String, Sensitive) Startup script run on first boot: an executable script with a shebang. The API stores it in cleartext. Changing it replaces the server, unless it moves to user_data_wo. Terraform keeps it in its state; user_data_wo does not.
+- `user_data` (String, Sensitive) Startup script run on first boot: an executable script with a shebang. The API stores it in cleartext. Changing it replaces the server, unless the same script moves to user_data_wo and is known during planning. Terraform keeps it in its state; user_data_wo does not.
 - `user_data_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Startup script run on first boot, never saved in the Terraform state. The API still stores it in cleartext. It is sent only when the server is created. Needs Terraform 1.11 or later.
 - `user_data_wo_version` (Number) Setting or changing it replaces the server, which then boots with the current user_data_wo.
 

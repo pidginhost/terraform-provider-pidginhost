@@ -129,3 +129,30 @@ func TestBucketCredentialsEphemeralErrorsNeverQuoteTheKeys(t *testing.T) {
 		t.Fatal("a failed open returned a result")
 	}
 }
+
+func TestBucketCredentialsEphemeralRejectsEmptyResponses(t *testing.T) {
+	for _, body := range []string{
+		"", "null", `{"bucket":"test","endpoint":"https://s3.example.com","region":"default","access_key":"","secret_key":null}`,
+	} {
+		t.Run(fmt.Sprintf("body length %d", len(body)), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, body)
+			}))
+			defer srv.Close()
+			e := &bucketCredentialsEphemeral{client: newAPIClient("test", srv.URL, "test")}
+			var schemaResp ephemeral.SchemaResponse
+			e.Schema(t.Context(), ephemeral.SchemaRequest{}, &schemaResp)
+			typ := schemaResp.Schema.Type().TerraformType(t.Context())
+			config := tfsdk.Config{Schema: schemaResp.Schema, Raw: tftypes.NewValue(typ, map[string]tftypes.Value{
+				"bucket_id": tftypes.NewValue(tftypes.String, "5"), "access_key": tftypes.NewValue(tftypes.String, nil),
+				"secret_key": tftypes.NewValue(tftypes.String, nil),
+			})}
+			resp := ephemeral.OpenResponse{Result: tfsdk.EphemeralResultData{Schema: schemaResp.Schema, Raw: tftypes.NewValue(typ, nil)}}
+			e.Open(t.Context(), ephemeral.OpenRequest{Config: config}, &resp)
+			if !resp.Diagnostics.HasError() || !resp.Result.Raw.IsNull() {
+				t.Fatal("an empty credentials response must fail without returning a result")
+			}
+		})
+	}
+}

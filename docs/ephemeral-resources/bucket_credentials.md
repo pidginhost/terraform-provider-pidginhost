@@ -3,12 +3,12 @@
 page_title: "pidginhost_bucket_credentials Ephemeral Resource - pidginhost"
 subcategory: ""
 description: |-
-  The current S3 access key and secret key of a bucket, read on every plan and apply and never saved in the Terraform state. Reading them does not rotate them, but the API records every read in an audit trail. Rotate keys with the pidginhost_bucket_credentials resource. Needs Terraform 1.10 or later.
+  The current S3 access key and secret key of a bucket, read on every plan and apply and never saved in the Terraform state. Reading them does not rotate them, but the API records every read in an audit trail. Incomplete credentials return an error. Rotate keys with the pidginhost_bucket_credentials resource. Needs Terraform 1.10 or later.
 ---
 
 # pidginhost_bucket_credentials (Ephemeral Resource)
 
-The current S3 access key and secret key of a bucket, read on every plan and apply and never saved in the Terraform state. Reading them does not rotate them, but the API records every read in an audit trail. Rotate keys with the pidginhost_bucket_credentials resource. Needs Terraform 1.10 or later.
+The current S3 access key and secret key of a bucket, read on every plan and apply and never saved in the Terraform state. Reading them does not rotate them, but the API records every read in an audit trail. Incomplete credentials return an error. Rotate keys with the pidginhost_bucket_credentials resource. Needs Terraform 1.10 or later.
 
 ## Example Usage
 

@@ -124,7 +124,7 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 
 	resp.Schema = schema.Schema{
 		Version:     1,
-		Description: "A cloud server.",
+		Description: "A cloud server. API errors omit response details when a password or startup script is submitted.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"hostname": schema.StringAttribute{
@@ -195,11 +195,12 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 				Optional:  true,
 				Sensitive: true,
 				Description: "Startup script run on first boot: an executable script with a shebang. The API stores " +
-					"it in cleartext. Changing it replaces the server, unless it moves to user_data_wo. Terraform " +
+					"it in cleartext. Changing it replaces the server, unless the same script moves to user_data_wo " +
+					"and is known during planning. Terraform " +
 					"keeps it in its state; user_data_wo does not.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIf(userDataReplaces,
-					"Changing it replaces the server, unless it moves to user_data_wo.",
-					"Changing it replaces the server, unless it moves to `user_data_wo`.")},
+					"Changing it replaces the server, unless the same known script moves to user_data_wo.",
+					"Changing it replaces the server, unless the same known script moves to `user_data_wo`.")},
 			},
 			"user_data_wo": schema.StringAttribute{
 				Optional:  true,
@@ -325,9 +326,13 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	body.FwPolicyIn = policyValue(plan.FwPolicyIn)
 	body.FwPolicyOut = policyValue(plan.FwPolicyOut)
 
-	created, _, err := r.client.CloudAPI.CloudServersCreate(ctx).ServerAddRequest(*body).Execute()
+	created, httpResp, err := r.client.CloudAPI.CloudServersCreate(ctx).ServerAddRequest(*body).Execute()
 	if err != nil {
-		resp.Diagnostics.Append(apiError("Creating server", err))
+		if body.Password != nil || body.UserData != nil {
+			resp.Diagnostics.Append(secretRouteError("Creating server", httpResp, err))
+		} else {
+			resp.Diagnostics.Append(apiError("Creating server", err))
+		}
 		return
 	}
 	// Saved before waiting: a server that fails to provision is still billed,
@@ -431,8 +436,12 @@ func (r *serverResource) Update(ctx context.Context, req resource.UpdateRequest,
 		patch.SshPubKey, changed = optionalString(plan.SSHPubKey), true
 	}
 	if changed {
-		if _, _, err := r.client.CloudAPI.CloudServersPartialUpdate(ctx, id).PatchedServerDetailRequest(patch).Execute(); err != nil {
-			resp.Diagnostics.Append(apiError("Updating server", err))
+		if _, httpResp, err := r.client.CloudAPI.CloudServersPartialUpdate(ctx, id).PatchedServerDetailRequest(patch).Execute(); err != nil {
+			if patch.Password != nil {
+				resp.Diagnostics.Append(secretRouteError("Updating server", httpResp, err))
+			} else {
+				resp.Diagnostics.Append(apiError("Updating server", err))
+			}
 			return
 		}
 	}
@@ -671,11 +680,11 @@ func (r *serverResource) refresh(ctx context.Context, m *serverModel, s *pidginh
 }
 
 // userDataReplaces replaces the server for a new startup script, but not when
-// the same configuration moves the script to user_data_wo.
+// the same known script moves to user_data_wo.
 func userDataReplaces(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
 	var writeOnly types.String
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("user_data_wo"), &writeOnly)...)
-	resp.RequiresReplace = !req.PlanValue.IsNull() || writeOnly.IsNull()
+	resp.RequiresReplace = !req.PlanValue.IsNull() || writeOnly.IsNull() || writeOnly.IsUnknown() || !writeOnly.Equal(req.StateValue)
 }
 
 func policyValue(v types.String) *pidginhost.FwPolicyOutEnum {

@@ -206,6 +206,11 @@ func TestServerV0UpgradeAndPlan(t *testing.T) {
 	if err := value.As(&attrs); err != nil {
 		t.Fatal(err)
 	}
+	for _, name := range []string{"password_wo", "password_wo_version", "user_data_wo", "user_data_wo_version"} {
+		if !attrs[name].IsNull() {
+			t.Fatalf("upgraded %s must be null", name)
+		}
+	}
 	var id string
 	if err := attrs["id"].As(&id); err != nil || id != "101" {
 		t.Fatal("upgrade lost the server id")

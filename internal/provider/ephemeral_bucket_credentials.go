@@ -31,7 +31,8 @@ func (e *bucketCredentialsEphemeral) Schema(_ context.Context, _ ephemeral.Schem
 	resp.Schema = schema.Schema{
 		Description: "The current S3 access key and secret key of a bucket, read on every plan and apply and never " +
 			"saved in the Terraform state. Reading them does not rotate them, but the API records every read in an " +
-			"audit trail. Rotate keys with the pidginhost_bucket_credentials resource. Needs Terraform 1.10 or later.",
+			"audit trail. Incomplete credentials return an error. Rotate keys with the pidginhost_bucket_credentials " +
+			"resource. Needs Terraform 1.10 or later.",
 		Attributes: map[string]schema.Attribute{
 			"bucket_id": schema.StringAttribute{
 				Required:    true,
@@ -69,6 +70,10 @@ func (e *bucketCredentialsEphemeral) Open(ctx context.Context, req ephemeral.Ope
 	creds, httpResp, err := e.client.CloudAPI.CloudBucketsCredentialsRevealCreate(ctx, id).Execute()
 	if err != nil {
 		resp.Diagnostics.Append(secretRouteError("Reading bucket credentials", httpResp, err))
+		return
+	}
+	if creds == nil || creds.AccessKey == "" || creds.SecretKey == "" {
+		resp.Diagnostics.AddError("Reading bucket credentials", "The API returned incomplete bucket credentials.")
 		return
 	}
 	config.AccessKey = types.StringValue(creds.AccessKey)

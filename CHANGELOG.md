@@ -8,6 +8,12 @@
 - Server passwords and startup scripts can be given as write-only values that never reach the Terraform state.
 - A guide to configuring the kubernetes and helm providers from a cluster's kubeconfig.
 
+### Fixed
+
+- Changed startup scripts take effect when switching to write-only values; identical scripts known during planning keep the server.
+- Server errors omit response details when passwords or startup scripts are submitted.
+- Incomplete bucket credentials produce a clear error instead of crashing the provider or passing empty keys to other providers.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added
