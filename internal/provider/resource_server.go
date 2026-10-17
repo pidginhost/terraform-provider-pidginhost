@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -16,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -41,9 +44,13 @@ type serverModel struct {
 	Generation            types.String   `tfsdk:"generation"`
 	Project               types.String   `tfsdk:"project"`
 	Password              types.String   `tfsdk:"password"`
+	PasswordWO            types.String   `tfsdk:"password_wo"`
+	PasswordWOVersion     types.Int64    `tfsdk:"password_wo_version"`
 	SSHPubKey             types.String   `tfsdk:"ssh_pub_key"`
 	SSHPubKeyID           types.String   `tfsdk:"ssh_pub_key_id"`
 	UserData              types.String   `tfsdk:"user_data"`
+	UserDataWO            types.String   `tfsdk:"user_data_wo"`
+	UserDataWOVersion     types.Int64    `tfsdk:"user_data_wo_version"`
 	PublicIP              types.String   `tfsdk:"public_ip"`
 	NewIPv4               types.Bool     `tfsdk:"new_ipv4"`
 	PublicIPv6            types.String   `tfsdk:"public_ipv6"`
@@ -159,7 +166,21 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 				Optional:  true,
 				Sensitive: true,
 				Description: "Password for the default user. Changing it resets the password through cloud-init. " +
-					"Unavailable on servers with a custom OS.",
+					"Unavailable on servers with a custom OS. Terraform keeps it in its state; password_wo does not.",
+			},
+			"password_wo": schema.StringAttribute{
+				Optional:  true,
+				Sensitive: true,
+				WriteOnly: true,
+				Description: "Password for the default user, never saved in the Terraform state. It is sent when the " +
+					"server is created and when password_wo_version changes. Needs Terraform 1.11 or later.",
+				Validators: []validator.String{stringvalidator.ConflictsWith(path.MatchRoot("password"))},
+			},
+			"password_wo_version": schema.Int64Attribute{
+				Optional: true,
+				Description: "Change it to send the current password_wo to the server, which resets the password " +
+					"through cloud-init.",
+				Validators: []validator.Int64{int64validator.AlsoRequires(path.MatchRoot("password_wo"))},
 			},
 			"ssh_pub_key": schema.StringAttribute{
 				Optional: true,
@@ -174,8 +195,29 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 				Optional:  true,
 				Sensitive: true,
 				Description: "Startup script run on first boot: an executable script with a shebang. The API stores " +
-					"it in cleartext. Changing it replaces the server.",
-				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
+					"it in cleartext. Changing it replaces the server, unless it moves to user_data_wo. Terraform " +
+					"keeps it in its state; user_data_wo does not.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIf(userDataReplaces,
+					"Changing it replaces the server, unless it moves to user_data_wo.",
+					"Changing it replaces the server, unless it moves to `user_data_wo`.")},
+			},
+			"user_data_wo": schema.StringAttribute{
+				Optional:  true,
+				Sensitive: true,
+				WriteOnly: true,
+				Description: "Startup script run on first boot, never saved in the Terraform state. The API still " +
+					"stores it in cleartext. It is sent only when the server is created. Needs Terraform 1.11 or later.",
+				Validators: []validator.String{stringvalidator.ConflictsWith(path.MatchRoot("user_data"))},
+			},
+			"user_data_wo_version": schema.Int64Attribute{
+				Optional:    true,
+				Description: "Setting or changing it replaces the server, which then boots with the current user_data_wo.",
+				Validators:  []validator.Int64{int64validator.AlsoRequires(path.MatchRoot("user_data_wo"))},
+				PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplaceIf(
+					func(_ context.Context, req planmodifier.Int64Request, resp *int64planmodifier.RequiresReplaceIfFuncResponse) {
+						resp.RequiresReplace = !req.PlanValue.IsNull()
+					},
+					"Setting or changing it replaces the server.", "Setting or changing it replaces the server.")},
 			},
 			"public_ip":               createOnly("Id or address of an IPv4 address on the account to attach at creation."),
 			"new_ipv4":                createOnlyBool("Allocate a new IPv4 address and attach it before first boot."),
@@ -254,14 +296,21 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	var passwordWO, userDataWO types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("password_wo"), &passwordWO)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("user_data_wo"), &userDataWO)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	body := pidginhost.NewServerAddRequest(plan.Image.ValueString(), plan.Package.ValueString())
 	body.Hostname = optionalString(plan.Hostname)
 	body.Generation = optionalString(plan.Generation)
 	body.Project = optionalString(plan.Project)
-	body.Password = optionalString(plan.Password)
+	body.Password = cmp.Or(optionalString(plan.Password), optionalString(passwordWO))
 	body.SshPubKey = optionalString(plan.SSHPubKey)
 	body.SshPubKeyId = optionalString(plan.SSHPubKeyID)
-	body.UserData = optionalString(plan.UserData)
+	body.UserData = cmp.Or(optionalString(plan.UserData), optionalString(userDataWO))
 	body.PublicIp = optionalString(plan.PublicIP)
 	body.NewIpv4 = optionalBool(plan.NewIPv4)
 	body.PublicIpv6 = optionalString(plan.PublicIPv6)
@@ -369,6 +418,14 @@ func (r *serverResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 	if !plan.Password.IsNull() && !plan.Password.Equal(state.Password) {
 		patch.Password, changed = optionalString(plan.Password), true
+	}
+	if !plan.PasswordWOVersion.IsNull() && !plan.PasswordWOVersion.Equal(state.PasswordWOVersion) {
+		var password types.String
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("password_wo"), &password)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		patch.Password, changed = optionalString(password), true
 	}
 	if !plan.SSHPubKey.IsUnknown() && sshKeyBody(plan.SSHPubKey.ValueString()) != sshKeyBody(state.SSHPubKey.ValueString()) {
 		patch.SshPubKey, changed = optionalString(plan.SSHPubKey), true
@@ -611,6 +668,14 @@ func (r *serverResource) refresh(ctx context.Context, m *serverModel, s *pidginh
 		m.FwPolicyOut = types.StringValue(string(iface.GetFwPolicyOut()))
 	}
 	return diags
+}
+
+// userDataReplaces replaces the server for a new startup script, but not when
+// the same configuration moves the script to user_data_wo.
+func userDataReplaces(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+	var writeOnly types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("user_data_wo"), &writeOnly)...)
+	resp.RequiresReplace = !req.PlanValue.IsNull() || writeOnly.IsNull()
 }
 
 func policyValue(v types.String) *pidginhost.FwPolicyOutEnum {
