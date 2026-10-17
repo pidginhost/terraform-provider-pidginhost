@@ -14,7 +14,7 @@ import (
 func TestCatalogDataSourceKeepsTheJSONAttributes(t *testing.T) {
 	noPublicIP := `{"id": 42, "hostname": "private.example.com", "status": "active", "image": "ubuntu24", "package": "cloudv-2",
 		"cpus": 2, "memory": 4, "disk_size": 50, "generation": "gen2", "destroy_protection": false, "ha_enabled": false,
-		"custom_os": false, "rescue_mode": false, "boot_iso": null, "rescue_supported": true,
+		"custom_os": false, "rescue_mode": false, "boot_iso": null, "rescue_supported": true, "billing": null,
 		"networks": {"public": {}, "private": []}}`
 	client := fakeRoutesAPI(t, map[string]string{
 		"/api/cloud/images/?page=1": `{"count": 1, "next": null, "results": [

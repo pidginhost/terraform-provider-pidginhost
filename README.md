@@ -47,7 +47,7 @@ resource "pidginhost_firewall" "web" {
 
 resource "pidginhost_server" "web" {
   hostname            = "web1"
-  image               = "ubuntu-24-04"
+  image               = "ubuntu24"
   package             = "cloudv-1"
   ssh_pub_key_id      = pidginhost_ssh_key.admin.id
   new_ipv4            = true

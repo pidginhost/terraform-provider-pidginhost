@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -185,5 +187,58 @@ func TestFirewallUpdateDeletesThenPatchesThenCreates(t *testing.T) {
 	}
 	if !slices.Equal(calls(), want) {
 		t.Fatalf("calls = %v\nwant %v", calls(), want)
+	}
+}
+
+func TestFirewallWaitsForValidationAndReportsRejectedRules(t *testing.T) {
+	defer func(old time.Duration) { pollInterval = old }(pollInterval)
+	pollInterval = time.Millisecond
+	for _, tc := range []struct {
+		final     pidginhost.FirewallRulesSetStatusEnum
+		wantError string
+	}{
+		{"validated", ""},
+		{"invalid", "port 70000 is out of range"},
+	} {
+		gets := 0
+		client, calls := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+			rule := apiRule(3, "70000", true, 10)
+			switch call {
+			case "POST /api/cloud/firewall-rules-set/":
+				return 201, pidginhost.FirewallRulesSet{Id: 9, Name: "web", Status: "pending", Rules: []pidginhost.FirewallRule{}}
+			case "POST /api/cloud/firewall-rules-set/9/rules/":
+				return 201, rule
+			case "GET /api/cloud/firewall-rules-set/9/":
+				// The API validates in the background: pending first.
+				if gets++; gets == 1 {
+					return 200, pidginhost.FirewallRulesSet{Id: 9, Name: "web", Status: "pending", Rules: []pidginhost.FirewallRule{rule}}
+				}
+				if tc.final == "invalid" {
+					rule.HasError, rule.ErrorMessage = true, "port 70000 is out of range"
+				}
+				return 200, pidginhost.FirewallRulesSet{Id: 9, Name: "web", Status: tc.final, Rules: []pidginhost.FirewallRule{rule}}
+			}
+			return 500, map[string]any{"detail": "unexpected call " + call}
+		})
+		r := &firewallResource{client: client}
+		s := testSchema(r)
+		plan := firewallModel{ID: types.StringUnknown(), Name: types.StringValue("web"), Status: types.StringUnknown(),
+			Rules: []firewallRuleModel{{
+				Direction: types.StringValue("in"), Action: types.StringValue("ACCEPT"), Protocol: types.StringValue("tcp"),
+				Dport: types.StringValue("70000"), Enabled: types.BoolValue(true), Position: types.Int64Null(),
+			}}}
+		resp := resource.CreateResponse{State: testState(t, s, nil)}
+		r.Create(context.Background(), resource.CreateRequest{Plan: testPlan(t, s, plan)}, &resp)
+		if tc.wantError != "" {
+			if !resp.Diagnostics.HasError() || !strings.Contains(fmt.Sprint(resp.Diagnostics), tc.wantError) {
+				t.Fatalf("%s: diagnostics %v", tc.final, resp.Diagnostics)
+			}
+			continue
+		}
+		var got firewallModel
+		resp.State.Get(context.Background(), &got)
+		if resp.Diagnostics.HasError() || got.Status.ValueString() != "validated" || gets != 2 {
+			t.Fatalf("%s: status %v gets %d diags %v calls %v", tc.final, got.Status, gets, resp.Diagnostics, calls())
+		}
 	}
 }

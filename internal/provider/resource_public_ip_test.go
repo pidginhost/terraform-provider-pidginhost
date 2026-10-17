@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	tfresource "github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -16,14 +18,15 @@ import (
 )
 
 func TestAccPublicIP(t *testing.T) {
-	server := testAccServerIDs(t, 1)[0]
-	rdns := testAccName("ip") + ".example.com"
+	prefix := testAccName("ip")
+	servers := testAccServersConfig(t, prefix, 1)
+	rdns := prefix + ".example.com"
 	tfresource.Test(t, tfresource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProviders,
 		Steps: []tfresource.TestStep{
 			{
-				Config: `resource "pidginhost_public_ip" "test" { version = 4 }`,
+				Config: servers + `resource "pidginhost_public_ip" "test" { version = 4 }`,
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("address"), knownvalue.NotNull()),
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("server_id"), knownvalue.Null()),
@@ -39,18 +42,18 @@ func TestAccPublicIP(t *testing.T) {
 			},
 			{
 				// Attach and set the PTR in place.
-				Config: fmt.Sprintf(`
+				Config: servers + fmt.Sprintf(`
 resource "pidginhost_public_ip" "test" {
   version     = 4
-  server_id   = %q
+  server_id   = pidginhost_server.acc0.id
   reverse_dns = %q
 }
-`, server, rdns),
+`, rdns),
 				ConfigPlanChecks: tfresource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("pidginhost_public_ip.test", plancheck.ResourceActionUpdate)},
 				},
 				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("server_id"), knownvalue.StringExact(server)),
+					statecheck.CompareValuePairs("pidginhost_public_ip.test", tfjsonpath.New("server_id"), "pidginhost_server.acc0", tfjsonpath.New("id"), compare.ValuesSame()),
 					statecheck.ExpectKnownValue("pidginhost_public_ip.test", tfjsonpath.New("reverse_dns"), knownvalue.StringExact(rdns)),
 				},
 			},
@@ -81,10 +84,12 @@ func TestPlanIPBinding(t *testing.T) {
 	}
 }
 
-func TestPublicIPMoveWaitsForTheDetach(t *testing.T) {
+func TestPublicIPMoveWaitsForTheDetachAndTheAttach(t *testing.T) {
+	defer func(old time.Duration) { pollInterval = old }(pollInterval)
+	pollInterval = time.Millisecond
 	ip := pidginhost.PublicIPv6{Id: 3, Address: "2001:db8::10", Gateway: "2001:db8::1", Prefix: 64, Attached: true,
 		Server: "web-5", ServerId: *pidginhost.NewNullableInt32(pidginhost.PtrInt32(5))}
-	detaching := 0
+	detaching, attaching := 0, 0
 	client, calls := fakeAPI(t, func(call string, body map[string]any) (int, any) {
 		switch call {
 		case "GET /api/cloud/ipv6/3/":
@@ -92,6 +97,12 @@ func TestPublicIPMoveWaitsForTheDetach(t *testing.T) {
 				if detaching--; detaching == 0 {
 					ip.Attached, ip.Server = false, ""
 					ip.ServerId.Unset()
+				}
+			}
+			// attached flips only once the network change is applied.
+			if attaching > 0 {
+				if attaching--; attaching == 0 {
+					ip.Attached = true
 				}
 			}
 			return 200, ip
@@ -103,15 +114,21 @@ func TestPublicIPMoveWaitsForTheDetach(t *testing.T) {
 				return 400, map[string]any{"detail": "address is attached"}
 			}
 			ip.ServerId.Set(pidginhost.PtrInt32(7))
+			attaching = 2
 			return 200, map[string]any{"attached": true, "reboot_required": true, "rebooted": false}
 		}
 		return 500, map[string]any{"detail": "unexpected call " + call}
 	})
 	r := &publicIPResource{client: client}
 	current := pidginhost.PublicIPv4(ip)
-	rebootNeeded, err := r.bind(context.Background(), 6, &current, "5", "7", false)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rebootNeeded, err := r.bind(ctx, 6, &current, "5", "7", false)
 	if err != nil || !rebootNeeded {
 		t.Fatalf("got reboot needed %v, err %v; calls %v", rebootNeeded, err, calls())
+	}
+	if !ip.Attached || attaching != 0 {
+		t.Fatalf("bind returned before the attach applied: %v", calls())
 	}
 	if !slices.Contains(calls(), "POST /api/cloud/servers/7/attach-ipv6/") {
 		t.Fatalf("no attach call: %v", calls())

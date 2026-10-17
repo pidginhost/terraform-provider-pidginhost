@@ -111,10 +111,15 @@ func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Reso
 		NewBucketCredentialsResource,
 		NewServerSnapshotResource,
 		NewKubernetesClusterResource,
+		NewKubernetesNodePoolResource,
 		NewKubernetesRouteResource,
 		NewKubernetesPortForwardResource,
 		NewKubernetesLBFirewallResource,
 		NewKubernetesClusterServerResource,
+		NewDNSZoneResource,
+		NewDNSRecordResource,
+		NewDomainNameserversResource,
+		NewDomainGlueRecordResource,
 	}
 }
 

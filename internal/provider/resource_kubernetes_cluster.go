@@ -91,7 +91,7 @@ func (r *kubernetesClusterResource) Schema(ctx context.Context, _ resource.Schem
 			},
 			"resource_pool_size": schema.Int64Attribute{
 				Optional:      true,
-				Description:   "Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created. This provider cannot resize pools; use the control panel.",
+				Description:   "Number of workers in the first resource pool, the cluster type minimum when not set. Only used when the cluster is created; resize the pool with pidginhost_kubernetes_node_pool.",
 				Validators:    []validator.Int64{int64validator.AtLeast(1)},
 				PlanModifiers: []planmodifier.Int64{firstPoolInt64{}},
 			},
@@ -525,10 +525,10 @@ func clusterFeatures(ctx context.Context, set types.Set, diags *diag.Diagnostics
 
 // The first resource pool is described on the cluster only to create it.
 // Changing those values later would otherwise replace the whole cluster, so
-// the plan stops instead. Pool management is not available in this provider.
+// the plan stops with a pointer to the pool's own resource instead.
 const firstPoolChanged = "The first resource pool is only described here to create the cluster, and changing it " +
-	"cannot update the pool. This provider cannot manage pools yet. Resize the pool in the control panel, " +
-	"and set this creation value back to %s."
+	"cannot update the pool. Manage the pool with pidginhost_kubernetes_node_pool (import it by " +
+	"\"<cluster_id>/<pool_id>\"), and set this creation value back to %s."
 
 type firstPoolString struct{}
 

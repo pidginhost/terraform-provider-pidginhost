@@ -43,7 +43,7 @@ func TestAccKubernetesCluster(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 				// The API does not return the first pool settings.
-				ImportStateVerifyIgnore: []string{"resource_pool_package", "resource_pool_size"},
+				ImportStateVerifyIgnore: []string{"resource_pool_package", "resource_pool_size", "enable_gateway_api"},
 			},
 			{
 				Config: testAccKubernetesClusterConfig(name+"-renamed", pkg),
