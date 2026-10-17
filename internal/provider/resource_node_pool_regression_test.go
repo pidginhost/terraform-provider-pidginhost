@@ -172,6 +172,31 @@ func TestNodePoolShrinkRejectsUnsuccessfulJournal(t *testing.T) {
 	}
 }
 
+func TestNodePoolRemovalDoesNotSwitchJournals(t *testing.T) {
+	reads := 0
+	client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+		if call != "GET /api/kubernetes/clusters/7/pool-removal-journals/?page=1" {
+			return 500, nil
+		}
+		reads++
+		journals := []pidginhost.PoolRemovalJournal{journal(11, "downsize", pidginhost.PtrInt32(1), "destructive", "w2")}
+		if reads > 1 {
+			// A later identical removal must not stand in for the operation
+			// already selected, even if the original journal is no longer listed.
+			journals = []pidginhost.PoolRemovalJournal{journal(12, "downsize", pidginhost.PtrInt32(1), "succeeded", "w2")}
+		}
+		return 200, pidginhost.PaginatedPoolRemovalJournalList{Results: journals}
+	})
+	r := &kubernetesNodePoolResource{client: client}
+	pool := &pidginhost.ResourcePool{Id: 3, Size: 2, Nodes: []pidginhost.ResourcePoolNode{{Name: "w1"}, {Name: "w2"}}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	err := r.followJournal(ctx, 7, 10, pool, pidginhost.PtrInt32(1))
+	if err == nil || !strings.Contains(err.Error(), "journal 11") || reads != 2 {
+		t.Fatalf("expected an error for the missing original journal: reads %d, error %v", reads, err)
+	}
+}
+
 func TestNodePoolChangesWaitForOtherPools(t *testing.T) {
 	fastKubernetesPoll(t)
 	started, release := make(chan struct{}), make(chan struct{})

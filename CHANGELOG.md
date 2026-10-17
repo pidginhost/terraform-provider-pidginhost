@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- Worker removals report an error if their progress disappears instead of reporting success from a later removal.
+- Volume changes stop with an error when the volume is cancelled or terminated instead of waiting until timeout.
 - DNS lifetime changes no longer report errors after a successful edit.
 - Imported mail and service records keep their root targets when their DNS lifetimes change.
 - Already inactive DNS zones can be destroyed without an error.

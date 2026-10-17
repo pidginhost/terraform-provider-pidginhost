@@ -84,7 +84,8 @@ func (r *volumeResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			"status": schema.StringAttribute{
 				Computed: true,
 				Description: "Status reported by the API, such as active. Terraform waits for active after " +
-					"creating, moving or growing the volume, and before growing it, since the API resizes only active volumes.",
+					"creating, moving or growing the volume, and before growing it, since the API resizes only active volumes. " +
+					"A failed, cancelled or terminated volume stops the wait with an error.",
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -431,11 +432,11 @@ func (m *volumeModel) fill(v *pidginhost.Volume) {
 	}
 }
 
-// volumeActive reports whether the API can change the volume now. A volume
-// that failed will not become active by waiting.
+// volumeActive reports whether the API can change the volume now. A failed
+// or deleted volume will not become active by waiting.
 func volumeActive(v *pidginhost.Volume) (bool, error) {
-	if v.Status == pidginhost.RESOURCESTATUSENUM_FAILED {
-		return false, fmt.Errorf("volume %d failed", v.Id)
+	if v.Status == pidginhost.RESOURCESTATUSENUM_FAILED || isGone(string(v.Status)) {
+		return false, fmt.Errorf("volume %d is %s", v.Id, v.Status)
 	}
 	return v.Status == pidginhost.RESOURCESTATUSENUM_ACTIVE, nil
 }

@@ -39,7 +39,7 @@ resource "pidginhost_volume" "data" {
 ### Read-Only
 
 - `id` (String) Identifier of the object in the PidginHost API.
-- `status` (String) Status reported by the API, such as active. Terraform waits for active after creating, moving or growing the volume, and before growing it, since the API resizes only active volumes.
+- `status` (String) Status reported by the API, such as active. Terraform waits for active after creating, moving or growing the volume, and before growing it, since the API resizes only active volumes. A failed, cancelled or terminated volume stops the wait with an error.
 
 <a id="nestedblock--timeouts"></a>
 ### Nested Schema for `timeouts`

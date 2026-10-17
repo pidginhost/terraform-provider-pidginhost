@@ -57,7 +57,7 @@ func (r *kubernetesNodePoolResource) Schema(ctx context.Context, _ resource.Sche
 		Description: "A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package " +
 			"and generation. The first pool, created with the cluster, can be imported and managed here too. " +
 			"Pool changes in the same cluster run one at a time within a provider instance. Shrinking and deleting " +
-			"wait for their own removal operation; failed removals return an error. Failed creation keeps deletion " +
+			"wait for their own removal operation; failed removals or missing journals return an error. Failed creation keeps deletion " +
 			"consent and timeouts in state for cleanup.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -443,12 +443,22 @@ func (r *kubernetesNodePoolResource) followJournal(ctx context.Context, clusterI
 		if err != nil {
 			return false, err
 		}
-		journal = removalJournal(journals, after, pool, size)
+		if journal == nil {
+			journal = removalJournal(journals, after, pool, size)
+		} else {
+			// Keep following the selected operation. A later matching removal
+			// cannot prove that this one succeeded if its journal disappears.
+			i := slices.IndexFunc(journals, func(j pidginhost.PoolRemovalJournal) bool { return j.Id == journal.Id })
+			if i < 0 {
+				return false, fmt.Errorf("removal journal %d is no longer listed", journal.Id)
+			}
+			journal = &journals[i]
+		}
 		return journal != nil && slices.Contains(journalDone, string(journal.Status)), nil
 	})
 	if err != nil {
 		if journal != nil {
-			return fmt.Errorf("removing workers from pool %d: journal %d is %s: %s", pool.Id, journal.Id, journal.Status, journal.Message)
+			return fmt.Errorf("removing workers from pool %d: journal %d is %s: %s (%s)", pool.Id, journal.Id, journal.Status, journal.Message, describeError(err))
 		}
 		return fmt.Errorf("removing workers from pool %d: %s", pool.Id, describeError(err))
 	}

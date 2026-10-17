@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -261,6 +262,49 @@ func TestVolumeGrowWaitsForActiveBeforeAndAfter(t *testing.T) {
 
 // body2size is the size the grow test asks for.
 const body2size = 30
+
+func TestVolumeGrowStopsAtTerminalStatus(t *testing.T) {
+	for _, status := range []string{"failed", "cancelled", "terminated"} {
+		for _, afterWrite := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/after_write=%t", status, afterWrite), func(t *testing.T) {
+				reads, writes := 0, 0
+				client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+					vol := pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Status: "active"}
+					switch call {
+					case "GET /api/cloud/volumes/7/":
+						reads++
+						if !afterWrite || writes > 0 {
+							vol.Status = pidginhost.ResourceStatusEnum(status)
+						}
+						return 200, vol
+					case "PATCH /api/cloud/volumes/7/":
+						writes++
+						vol.Status = "upgrading"
+						return 200, vol
+					}
+					return 500, nil
+				})
+				r := &volumeResource{client: client}
+				s := testSchema(r)
+				prior := testState(t, s, testVolume(t, r, 20, "1"))
+				resp := resource.UpdateResponse{State: prior}
+				ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancel()
+				r.Update(ctx, resource.UpdateRequest{State: prior, Plan: testPlan(t, s, testVolume(t, r, 30, "1"))}, &resp)
+				wantWrites := 0
+				if afterWrite {
+					wantWrites = 1
+				}
+				if !resp.Diagnostics.HasError() || !strings.Contains(fmt.Sprint(resp.Diagnostics), status) || reads != wantWrites+1 || writes != wantWrites {
+					t.Fatalf("expected an immediate %s error: reads %d, writes %d, diagnostics %v", status, reads, writes, resp.Diagnostics)
+				}
+				if !resp.State.Raw.Equal(prior.Raw) {
+					t.Fatal("failed resize changed the saved state")
+				}
+			})
+		}
+	}
+}
 
 func TestVolumeCreateKeepsCleanupStateOnFailure(t *testing.T) {
 	client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
