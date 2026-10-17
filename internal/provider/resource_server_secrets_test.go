@@ -117,7 +117,7 @@ resource "terraform_data" %q {
 // The API's reason for refusing a request stays in the error, but an echo of
 // the submitted password or script does not, even reformatted.
 func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
-	const script = "#!/bin/sh\r\ntoken=test-script-secret\r\n"
+	const script = "#!/bin/sh\r\ntoken=\"test-script-secret\"\r\n"
 	const password = `test-pass"word\secret`
 	for _, tc := range []struct {
 		operation string
@@ -132,6 +132,11 @@ func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
 			normalized := strings.TrimSpace(strings.ReplaceAll(body["user_data"].(string), "\r\n", "\n"))
 			out, _ := json.Marshal(map[string]any{"package": []string{"Unknown package."}, "detail": "refused " + normalized})
 			return "application/json", string(out)
+		}},
+		{"create escaped script", func(body map[string]any) (string, string) {
+			normalized := strings.TrimSpace(strings.ReplaceAll(body["user_data"].(string), "\r\n", "\n"))
+			escaped, _ := json.Marshal(normalized)
+			return "text/plain", "Unknown package. refused " + string(escaped)
 		}},
 		{"update password", func(body map[string]any) (string, string) {
 			out, _ := json.Marshal(map[string]any{"package": []string{"Unknown package."}, "detail": fmt.Sprint("refused ", body["password"])})
@@ -153,7 +158,7 @@ func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
 			model.ID = types.StringValue("101")
 			state := serverTestPlan(t, model)
 			configModel := model
-			if tc.operation == "create script" {
+			if strings.Contains(tc.operation, "script") {
 				configModel.UserDataWO = types.StringValue(script)
 			} else {
 				configModel.PasswordWO = types.StringValue(password)

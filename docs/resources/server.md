@@ -3,12 +3,12 @@
 page_title: "pidginhost_server Resource - pidginhost"
 subcategory: ""
 description: |-
-  A cloud server.
+  A cloud server. Errors from server creation and updates keep the API's explanation and redact submitted passwords and startup scripts.
 ---
 
 # pidginhost_server (Resource)
 
-A cloud server.
+A cloud server. Errors from server creation and updates keep the API's explanation and redact submitted passwords and startup scripts.
 
 ## Example Usage
 

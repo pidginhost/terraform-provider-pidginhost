@@ -123,8 +123,9 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 	}
 
 	resp.Schema = schema.Schema{
-		Version:     1,
-		Description: "A cloud server.",
+		Version: 1,
+		Description: "A cloud server. Errors from server creation and updates keep the API's explanation " +
+			"and redact submitted passwords and startup scripts.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"hostname": schema.StringAttribute{

@@ -10,7 +10,7 @@
 
 ### Changed
 
-- Server errors never repeat a submitted password or startup script.
+- Server errors hide echoed passwords and startup scripts while preserving the API's explanation.
 
 ## [0.2.0] - 2026-10-17
 

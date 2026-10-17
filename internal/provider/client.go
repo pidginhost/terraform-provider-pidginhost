@@ -151,22 +151,56 @@ func secretRouteError(summary string, resp *http.Response, err error) diag.Diagn
 // blank out the message.
 func redactedAPIError(summary string, err error, secrets ...*string) diag.Diagnostic {
 	detail := describeError(err)
+	forms := make(map[string]struct{})
+	addForms := func(value string) {
+		forms[value] = struct{}{}
+		escaped, _ := json.Marshal(value)
+		// Remove only the enclosing quotes, not an escaped trailing quote.
+		forms[string(escaped[1:len(escaped)-1])] = struct{}{}
+	}
 	for _, secret := range secrets {
 		if secret == nil || *secret == "" {
 			continue
 		}
-		escaped, _ := json.Marshal(*secret)
-		forms := []string{*secret, strings.Trim(string(escaped), `"`)}
+		addForms(*secret)
 		for _, line := range strings.Split(*secret, "\n") {
 			if line = strings.TrimSpace(line); len(line) >= 8 {
-				forms = append(forms, line)
+				addForms(line)
 			}
 		}
-		for _, form := range forms {
-			detail = strings.ReplaceAll(detail, form, "(redacted)")
+	}
+
+	// Find every match before editing the message. Replacing one secret first
+	// can hide an overlapping match and leave part of another secret exposed.
+	type span struct{ start, end int }
+	var spans []span
+	for form := range forms {
+		for offset := 0; offset < len(detail); {
+			index := strings.Index(detail[offset:], form)
+			if index < 0 {
+				break
+			}
+			start := offset + index
+			spans = append(spans, span{start, start + len(form)})
+			offset = start + 1
 		}
 	}
-	return diag.NewErrorDiagnostic(summary, detail)
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+	var redacted strings.Builder
+	position := 0
+	for i := 0; i < len(spans); {
+		start, end := spans[i].start, spans[i].end
+		i++
+		for i < len(spans) && spans[i].start <= end {
+			end = max(end, spans[i].end)
+			i++
+		}
+		redacted.WriteString(detail[position:start])
+		redacted.WriteString("(redacted)")
+		position = end
+	}
+	redacted.WriteString(detail[position:])
+	return diag.NewErrorDiagnostic(summary, redacted.String())
 }
 
 func describeError(err error) string {
