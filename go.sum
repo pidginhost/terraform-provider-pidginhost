@@ -164,8 +164,8 @@ github.com/mitchellh/reflectwalk v1.0.2 h1:G2LzWKi524PWgd3mLHV8Y5k7s6XUvT0Gef6zx
 github.com/mitchellh/reflectwalk v1.0.2/go.mod h1:mSTlrgnPZtwu0c4WaC2kGObEpuNDbx0jmZXqmk4esnw=
 github.com/oklog/run v1.2.0 h1:O8x3yXwah4A73hJdlrwo/2X6J62gE5qTMusH0dvz60E=
 github.com/oklog/run v1.2.0/go.mod h1:mgDbKRSwPhJfesJ4PntqFUbKQRZ50NgmZTSPlFA0YFk=
-github.com/pidginhost/sdk-go v0.14.0 h1:iiX9vYVgXi/LLdZViYRcLw3wXSZOXJWmTG0h1D7d1gU=
-github.com/pidginhost/sdk-go v0.14.0/go.mod h1:F4r5KKeL69oidUVLAT462IX6yPuqSkYXpLG+3hQx9DQ=
+github.com/pidginhost/sdk-go v0.15.0 h1:BJG23BOmRHXM6xWbVfAfAwO16Dzl1mb8PWyp6A1HPFA=
+github.com/pidginhost/sdk-go v0.15.0/go.mod h1:F4r5KKeL69oidUVLAT462IX6yPuqSkYXpLG+3hQx9DQ=
 github.com/pjbgf/sha1cd v0.6.0 h1:3WJ8Wz8gvDz29quX1OcEmkAlUg9diU4GxJHqs0/XiwU=
 github.com/pjbgf/sha1cd v0.6.0/go.mod h1:lhpGlyHLpQZoxMv8HcgXvZEhcGs0PG/vsZnEJ7H0iCM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
