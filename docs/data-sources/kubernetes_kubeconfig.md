@@ -3,12 +3,12 @@
 page_title: "pidginhost_kubernetes_kubeconfig Data Source - pidginhost"
 subcategory: ""
 description: |-
-  The current kubeconfig of a Kubernetes cluster. It holds cluster admin credentials, which Terraform keeps in its state.
+  The current kubeconfig of a Kubernetes cluster. It holds cluster admin credentials, which Terraform keeps in its state. With Terraform 1.10 or later, use the pidginhost_kubernetes_kubeconfig ephemeral resource instead, which keeps them out of the state.
 ---
 
 # pidginhost_kubernetes_kubeconfig (Data Source)
 
-The current kubeconfig of a Kubernetes cluster. It holds cluster admin credentials, which Terraform keeps in its state.
+The current kubeconfig of a Kubernetes cluster. It holds cluster admin credentials, which Terraform keeps in its state. With Terraform 1.10 or later, use the pidginhost_kubernetes_kubeconfig ephemeral resource instead, which keeps them out of the state.
 
 ## Example Usage
 

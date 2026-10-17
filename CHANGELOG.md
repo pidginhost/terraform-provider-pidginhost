@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Kubeconfigs and bucket keys can configure other providers without being saved in the Terraform state.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added
