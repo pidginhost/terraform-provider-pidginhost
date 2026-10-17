@@ -119,7 +119,7 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := pidginhost.NewVolumeRequest(plan.Size.ValueInt64(), plan.Product.ValueString())
+	body := pidginhost.NewVolumeRequest(int32(plan.Size.ValueInt64()), plan.Product.ValueString())
 	body.Alias = optionalString(plan.Alias)
 	body.Project = optionalString(plan.Project)
 	timeout, diags := plan.Timeouts.Create(ctx, computeDefaultTimeout)
@@ -215,7 +215,7 @@ func (r *volumeResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 	grow := !plan.Size.Equal(state.Size)
 	if grow {
-		body.Size = optionalInt64(plan.Size)
+		body.Size = optionalInt32(plan.Size)
 		// The API resizes only active volumes; a new or moved one may still be busy.
 		if _, err = r.waitVolume(ctx, id, volumeActive); err != nil {
 			resp.Diagnostics.Append(apiError("Waiting for the volume to become active", err))
@@ -232,7 +232,7 @@ func (r *volumeResource) Update(ctx context.Context, req resource.UpdateRequest,
 		want := plan.Size.ValueInt64()
 		v, err = r.waitVolume(ctx, id, func(v *pidginhost.Volume) (bool, error) {
 			active, err := volumeActive(v)
-			return active && v.Size == want, err
+			return active && int64(v.Size) == want, err
 		})
 		if err != nil {
 			resp.Diagnostics.Append(apiError("Waiting for the resize", err))
@@ -416,7 +416,7 @@ func (r *volumeResource) serverHasVolume(ctx context.Context, serverID, volumeID
 func (m *volumeModel) fill(v *pidginhost.Volume) {
 	m.ID = types.StringValue(strconv.Itoa(int(v.Id)))
 	m.Alias = types.StringValue(v.GetAlias())
-	m.Size = types.Int64Value(v.Size)
+	m.Size = types.Int64Value(int64(v.Size))
 	m.Project = types.StringValue(v.GetProject())
 	m.Status = types.StringValue(string(v.Status))
 	// The API takes a product ID or slug; keep the one configured.

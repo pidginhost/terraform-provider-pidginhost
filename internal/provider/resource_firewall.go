@@ -385,7 +385,7 @@ func (m firewallRuleModel) request() pidginhost.FirewallRuleRequest {
 		Destination: optionalString(m.Destination),
 		Dport:       optionalString(m.Dport),
 		Enabled:     optionalBool(m.Enabled),
-		Position:    optionalInt64(m.Position),
+		Position:    optionalInt32(m.Position),
 	}
 }
 
@@ -403,7 +403,7 @@ func firewallRuleFromAPI(r pidginhost.FirewallRule) firewallRuleModel {
 		Position: types.Int64Null(),
 	}
 	if r.Position != nil {
-		m.Position = types.Int64Value(*r.Position)
+		m.Position = types.Int64Value(int64(*r.Position))
 	}
 	return m
 }

@@ -224,7 +224,7 @@ func TestVolumeGrowWaitsForActiveBeforeAndAfter(t *testing.T) {
 				vol.Status = "active"
 			}
 			if resizeAt > 0 && reads >= resizeAt+2 {
-				vol.Status, vol.Size = "active", int64(body2size)
+				vol.Status, vol.Size = "active", int32(body2size)
 			}
 			return 200, vol
 		case "PATCH /api/cloud/volumes/7/":

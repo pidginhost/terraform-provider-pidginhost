@@ -318,7 +318,7 @@ func (r *floatingIPResource) fill(ctx context.Context, m *floatingIPModel, fip *
 	m.ReverseDNS = types.StringValue(fip.ReverseDns)
 	m.Address = types.StringValue(fip.Address)
 	m.Gateway = types.StringValue(fip.Gateway)
-	m.Prefix = types.Int64Value(fip.Prefix)
+	m.Prefix = types.Int64Value(int64(fip.Prefix))
 	// An unset set stays unset while no server is authorized.
 	if len(authorized) > 0 || m.AuthorizedServerIDs != nil {
 		m.AuthorizedServerIDs = authorized

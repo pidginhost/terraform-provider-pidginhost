@@ -41,11 +41,3 @@ func optionalInt32(v types.Int64) *int32 {
 	i := int32(v.ValueInt64())
 	return &i
 }
-
-func optionalInt64(v types.Int64) *int64 {
-	if v.IsNull() || v.IsUnknown() {
-		return nil
-	}
-	i := v.ValueInt64()
-	return &i
-}

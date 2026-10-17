@@ -82,7 +82,7 @@ func (r *kubernetesPortForwardResource) Create(ctx context.Context, req resource
 	}
 	body := pidginhost.K8sPortForwardRequest{
 		InternalIp: plan.InternalIP.ValueString(),
-		Port:       plan.Port.ValueInt64(),
+		Port:       int32(plan.Port.ValueInt64()),
 		Protocol:   pidginhost.ProtocolEnum(plan.Protocol.ValueString()),
 	}
 	forward, _, err := r.client.KubernetesAPI.KubernetesClustersPortForwardsCreate(ctx, clusterID).K8sPortForwardRequest(body).Execute()
@@ -169,7 +169,7 @@ func (r *kubernetesPortForwardResource) ImportState(ctx context.Context, req res
 
 func (m *kubernetesPortForwardModel) fill(forward *pidginhost.K8sPortForward) {
 	m.ID = types.StringValue(strconv.Itoa(int(forward.Id)))
-	m.Port = types.Int64Value(forward.Port)
+	m.Port = types.Int64Value(int64(forward.Port))
 	m.Protocol = types.StringValue(string(forward.Protocol))
 	m.InternalIP = types.StringValue(forward.InternalIp)
 }

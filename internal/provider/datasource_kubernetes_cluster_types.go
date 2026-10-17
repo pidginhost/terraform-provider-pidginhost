@@ -20,8 +20,8 @@ type kubernetesClusterTypesDataSource struct{ dataSourceBase }
 
 type clusterTypeModel struct {
 	Type                string                `tfsdk:"type"`
-	WorkerNodesCountMin *int64                `tfsdk:"worker_nodes_count_min"`
-	WorkerNodesCountMax *int64                `tfsdk:"worker_nodes_count_max"`
+	WorkerNodesCountMin *int32                `tfsdk:"worker_nodes_count_min"`
+	WorkerNodesCountMax *int32                `tfsdk:"worker_nodes_count_max"`
 	WorkerNodePackages  []clusterPackageModel `tfsdk:"worker_node_packages"`
 }
 
