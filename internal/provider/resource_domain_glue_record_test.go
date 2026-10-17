@@ -189,3 +189,32 @@ func TestDomainGlueRecordLifecycle(t *testing.T) {
 		t.Fatalf("read after delete: %v, state kept", gone.Diagnostics)
 	}
 }
+
+func TestDomainGlueWriteErrorsWithholdTheResponse(t *testing.T) {
+	for _, status := range []int{200, 400} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+				if strings.HasPrefix(call, "GET ") {
+					return 200, pidginhost.PaginatedDNSGlueList{Results: []pidginhost.DNSGlue{{Name: "ns1", Ip: "192.0.2.1"}}}
+				}
+				return status, map[string]any{"owner": "private response marker"}
+			})
+			r := &domainGlueRecordResource{client: client}
+			m := domainGlueRecordModel{Domain: types.StringValue("example.com"), Name: types.StringValue("ns1"), IP: types.StringValue("192.0.2.1")}
+			diags := r.upsert(t.Context(), "example.com", "ns1", &m)
+			if status == 400 {
+				resp := resource.DeleteResponse{}
+				r.Delete(t.Context(), resource.DeleteRequest{State: testState(t, testSchema(r), m)}, &resp)
+				diags.Append(resp.Diagnostics...)
+			}
+			if !diags.HasError() {
+				t.Fatal("expected a write or decoding error")
+			}
+			for _, d := range diags {
+				if strings.Contains(d.Detail(), "private response marker") || !strings.Contains(d.Detail(), "personal data") {
+					t.Fatalf("unsafe diagnostic: %q", d.Detail())
+				}
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"net/http"
 	"net/netip"
 	"slices"
@@ -98,7 +99,8 @@ func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			"is its name, type and the values its type uses, and changing any of them replaces the record. ttl " +
 			"changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, " +
 			"SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host " +
-			"names in cname, exchange and target are compared without case and trailing dot.",
+			"names in cname, exchange and target are compared without case and trailing dot. " +
+			"Destroying a record also succeeds if its zone has already been deactivated.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -130,8 +132,8 @@ func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:    true,
 				Computed:    true,
 				Default:     int64default.StaticInt64(14400),
-				Description: "Time to live in seconds. Defaults to 14400.",
-				Validators:  []validator.Int64{int64validator.AtLeast(1)},
+				Description: "Time to live in seconds, from 1 to 2147483647. Defaults to 14400.",
+				Validators:  []validator.Int64{int64validator.Between(1, math.MaxInt32)},
 			},
 			"address":    text("IPv4 address of an A record, or IPv6 address of an AAAA record."),
 			"cname":      text("Target host name of a CNAME record."),
@@ -271,7 +273,7 @@ func (r *dnsRecordResource) Delete(ctx context.Context, req resource.DeleteReque
 	}
 	defer lockDNSZone(state.zone(), state.Source.ValueString())()
 	records, httpResp, err := r.list(ctx, &state)
-	if isNotFound(httpResp, err) {
+	if isNotFound(httpResp, err) || err != nil && r.zoneGone(ctx, &state) {
 		return
 	}
 	if err != nil {

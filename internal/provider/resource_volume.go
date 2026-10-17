@@ -46,7 +46,8 @@ func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *volumeResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A storage volume attached to a cloud server.",
+		Description: "A storage volume attached to a cloud server. If provisioning fails after allocation, " +
+			"Terraform keeps the volume, attachment and configured timeouts in state for cleanup.",
 		Attributes: map[string]schema.Attribute{
 			"id": idAttribute(),
 			"server_id": schema.StringAttribute{
@@ -135,7 +136,12 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	// Saved before waiting, so a volume that fails to provision is tainted, not orphaned.
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), strconv.Itoa(int(v.Id)))...)
+	// Keep its attachment and configured timeouts for the cleanup as well.
+	plan.fill(v)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	if v, err = r.waitVolume(ctx, v.Id, volumeActive); err == nil && v == nil {
 		err = fmt.Errorf("the volume disappeared while it was being created")
 	}

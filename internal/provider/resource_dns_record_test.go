@@ -449,3 +449,30 @@ func TestDNSRecordLeavesStateWhenItsZoneIsDeactivated(t *testing.T) {
 		}
 	}
 }
+
+func TestDNSRecordDeleteAfterZoneDeactivation(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		client, calls := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+			switch call {
+			case "GET /api/freedns/dns/records/?domain=example.com&source=internal":
+				return 400, map[string]any{"message": "FreeDNS is not active for this domain."}
+			case "GET /api/freedns/dns/":
+				return 200, []pidginhost.FreeDNSDomain{{Domain: "example.com", Active: active, Source: "internal"}}
+			}
+			return 500, nil
+		})
+		r := &dnsRecordResource{client: client}
+		state := dnsRecordModel{Zone: types.StringValue("example.com"), Source: types.StringValue("internal"),
+			Name: types.StringValue("www"), Type: types.StringValue("A"), Address: types.StringValue("192.0.2.10")}
+		resp := resource.DeleteResponse{}
+		r.Delete(t.Context(), resource.DeleteRequest{State: testState(t, testSchema(r), state)}, &resp)
+		if resp.Diagnostics.HasError() != active {
+			t.Fatalf("zone active %v: %v, calls %v", active, resp.Diagnostics, calls())
+		}
+		for _, call := range calls() {
+			if !strings.HasPrefix(call, "GET ") {
+				t.Fatalf("unexpected write %s", call)
+			}
+		}
+	}
+}

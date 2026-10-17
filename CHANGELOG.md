@@ -22,6 +22,10 @@
 
 ### Fixed
 
+- Concurrent worker changes wait for each other, and removals report failures before an apply finishes.
+- Failed worker and volume creation preserves deletion settings for cleanup.
+- DNS records can be destroyed after their zone is deactivated.
+- Invalid worker counts and DNS lifetimes are rejected before an apply changes them.
 - Terraform installs the provider with the plugin protocol it actually speaks.
 - Listings return every page instead of only the first.
 - API errors name the field the API refused.

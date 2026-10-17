@@ -3,12 +3,12 @@
 page_title: "pidginhost_kubernetes_node_pool Resource - pidginhost"
 subcategory: ""
 description: |-
-  A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package and generation. The first pool, created with the cluster, can be imported and managed here too.
+  A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package and generation. The first pool, created with the cluster, can be imported and managed here too. Pool changes in the same cluster run one at a time within a provider instance. Shrinking and deleting wait for their own removal operation; failed removals return an error. Failed creation keeps deletion consent and timeouts in state for cleanup.
 ---
 
 # pidginhost_kubernetes_node_pool (Resource)
 
-A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package and generation. The first pool, created with the cluster, can be imported and managed here too.
+A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package and generation. The first pool, created with the cluster, can be imported and managed here too. Pool changes in the same cluster run one at a time within a provider instance. Shrinking and deleting wait for their own removal operation; failed removals return an error. Failed creation keeps deletion consent and timeouts in state for cleanup.
 
 ## Example Usage
 
@@ -31,7 +31,7 @@ resource "pidginhost_kubernetes_node_pool" "workers" {
 
 - `cluster_id` (String) ID of the Kubernetes cluster. Changing it replaces the object.
 - `package` (String) Worker package slug, from the pidginhost_kubernetes_cluster_types data source. Changing it replaces the pool.
-- `size` (Number) Number of workers. It changes in place; shrinking drains the removed workers and needs local_data_loss_accepted = true.
+- `size` (Number) Number of workers, from 1 to 2147483647, subject to the cluster type limits. It changes in place; shrinking drains the removed workers and needs local_data_loss_accepted = true.
 
 ### Optional
 

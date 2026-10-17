@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/compare"
@@ -260,3 +261,33 @@ func TestVolumeGrowWaitsForActiveBeforeAndAfter(t *testing.T) {
 
 // body2size is the size the grow test asks for.
 const body2size = 30
+
+func TestVolumeCreateKeepsCleanupStateOnFailure(t *testing.T) {
+	client, _ := fakeAPI(t, func(call string, _ map[string]any) (int, any) {
+		switch call {
+		case "POST /api/cloud/servers/1/volumes/":
+			return 201, pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Status: "provisioning"}
+		case "GET /api/cloud/volumes/7/":
+			return 200, pidginhost.Volume{Id: 7, Size: 20, Product: "ssd", Status: "failed"}
+		}
+		return 500, nil
+	})
+	r := &volumeResource{client: client}
+	s := testSchema(r)
+	plan := testVolume(t, r, 20, "1")
+	plan.Timeouts.Object = types.ObjectValueMust(plan.Timeouts.AttributeTypes(t.Context()), map[string]attr.Value{
+		"create": types.StringNull(), "update": types.StringNull(), "delete": types.StringValue("2m"),
+	})
+	resp := resource.CreateResponse{State: testState(t, s, nil)}
+	r.Create(t.Context(), resource.CreateRequest{Plan: testPlan(t, s, plan)}, &resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("expected a failed provisioning diagnostic")
+	}
+	var got volumeModel
+	if diags := resp.State.Get(t.Context(), &got); diags.HasError() {
+		t.Fatal(diags)
+	}
+	if got.ID.ValueString() != "7" || !got.ServerID.Equal(plan.ServerID) || !got.Timeouts.Equal(plan.Timeouts) {
+		t.Fatalf("cleanup state lost: %+v", got)
+	}
+}

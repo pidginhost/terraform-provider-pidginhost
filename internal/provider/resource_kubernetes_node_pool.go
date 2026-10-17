@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
@@ -53,7 +55,10 @@ func (r *kubernetesNodePoolResource) Metadata(_ context.Context, req resource.Me
 func (r *kubernetesNodePoolResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "A pool of worker nodes in a Kubernetes cluster. A cluster holds at most one pool per package " +
-			"and generation. The first pool, created with the cluster, can be imported and managed here too.",
+			"and generation. The first pool, created with the cluster, can be imported and managed here too. " +
+			"Pool changes in the same cluster run one at a time within a provider instance. Shrinking and deleting " +
+			"wait for their own removal operation; failed removals return an error. Failed creation keeps deletion " +
+			"consent and timeouts in state for cleanup.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:      true,
@@ -82,9 +87,10 @@ func (r *kubernetesNodePoolResource) Schema(ctx context.Context, _ resource.Sche
 			},
 			"size": schema.Int64Attribute{
 				Required: true,
-				Description: "Number of workers. It changes in place; shrinking drains the removed workers and needs " +
+				Description: "Number of workers, from 1 to 2147483647, subject to the cluster type limits. " +
+					"It changes in place; shrinking drains the removed workers and needs " +
 					"local_data_loss_accepted = true.",
-				Validators: []validator.Int64{int64validator.AtLeast(1)},
+				Validators: []validator.Int64{int64validator.Between(1, math.MaxInt32)},
 			},
 			"local_data_loss_accepted": schema.BoolAttribute{
 				Optional: true,
@@ -131,6 +137,12 @@ func (r *kubernetesNodePoolResource) Create(ctx context.Context, req resource.Cr
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
 	}
+	unlock, err := r.lockCluster(ctx, clusterID)
+	if err != nil {
+		resp.Diagnostics.AddError("Waiting for another pool change", err.Error())
+		return
+	}
+	defer unlock()
 	if err := r.waitCluster(ctx, clusterID); err != nil {
 		resp.Diagnostics.AddError("Waiting for the cluster", err.Error())
 		return
@@ -147,9 +159,17 @@ func (r *kubernetesNodePoolResource) Create(ctx context.Context, req resource.Cr
 	}
 	poolID := strconv.Itoa(int(created.Id))
 	// Saved before waiting: the workers are billed even if the change fails.
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), plan.ClusterID.ValueString()+"/"+poolID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("cluster_id"), plan.ClusterID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("pool_id"), poolID)...)
+	// Keep the consent and timeouts needed to clean up a failed creation.
+	plan.ID = types.StringValue(plan.ClusterID.ValueString() + "/" + poolID)
+	plan.PoolID = types.StringValue(poolID)
+	plan.Nodes = types.ListNull(types.ObjectType{AttrTypes: nodeAttrTypes})
+	if plan.Generation.IsUnknown() {
+		plan.Generation = types.StringNull()
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	pool, err := r.settle(ctx, clusterID, poolID, plan.Size.ValueInt64())
 	if err != nil {
 		resp.Diagnostics.AddError("Creating node pool", err.Error())
@@ -236,8 +256,14 @@ func (r *kubernetesNodePoolResource) Delete(ctx context.Context, req resource.De
 		resp.Diagnostics.AddAttributeError(path.Root("cluster_id"), "Invalid cluster ID", err.Error())
 		return
 	}
+	unlock, err := r.lockCluster(ctx, clusterID)
+	if err != nil {
+		resp.Diagnostics.AddError("Waiting for another pool change", err.Error())
+		return
+	}
+	defer unlock()
 	poolID := state.PoolID.ValueString()
-	pool, httpResp, err := r.client.KubernetesAPI.KubernetesClustersResourcePoolsRetrieve(ctx, clusterID, poolID).Execute()
+	_, httpResp, err := r.client.KubernetesAPI.KubernetesClustersResourcePoolsRetrieve(ctx, clusterID, poolID).Execute()
 	if isNotFound(httpResp, err) {
 		return
 	}
@@ -247,6 +273,16 @@ func (r *kubernetesNodePoolResource) Delete(ctx context.Context, req resource.De
 	}
 	if err := r.waitCluster(ctx, clusterID); err != nil {
 		resp.Diagnostics.AddError("Waiting for the cluster", err.Error())
+		return
+	}
+	// An earlier change can add or remove workers while the cluster settles.
+	// Match the removal journal against the workers present at this deletion.
+	pool, httpResp, err := r.client.KubernetesAPI.KubernetesClustersResourcePoolsRetrieve(ctx, clusterID, poolID).Execute()
+	if isNotFound(httpResp, err) {
+		return
+	}
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Reading node pool", err))
 		return
 	}
 	// A pool with workers is removed through a journal; an empty one at once.
@@ -290,6 +326,11 @@ func (r *kubernetesNodePoolResource) ImportState(ctx context.Context, req resour
 // resize changes the worker count. Growing waits for the cluster; shrinking
 // follows the removal journal the API opens for the drained workers.
 func (r *kubernetesNodePoolResource) resize(ctx context.Context, clusterID int32, poolID string, want int64, ack bool) (*pidginhost.ResourcePool, error) {
+	unlock, err := r.lockCluster(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if err := r.waitCluster(ctx, clusterID); err != nil {
 		return nil, err
 	}
@@ -336,7 +377,7 @@ func (r *kubernetesNodePoolResource) settle(ctx context.Context, clusterID int32
 func (r *kubernetesNodePoolResource) waitCluster(ctx context.Context, clusterID int32) error {
 	id := strconv.Itoa(int(clusterID))
 	cluster, err := pollCluster(ctx, r.client, id, func(c *pidginhost.ClusterDetail) bool {
-		return c != nil && (c.Status == "active" || c.Status == "failed" || isGone(string(c.Status)))
+		return c == nil || c.Status == "active" || c.Status == "failed" || isGone(string(c.Status))
 	})
 	if err != nil {
 		return err
@@ -349,6 +390,29 @@ func (r *kubernetesNodePoolResource) waitCluster(ctx context.Context, clusterID 
 		return fmt.Errorf("cluster %s is %s", id, status)
 	}
 	return nil
+}
+
+// Pool mutations share the cluster's asynchronous operation slot. Keep the
+// readiness check, write and journal wait together across resource instances.
+// The operation's existing timeout also bounds time spent waiting for the lock.
+var nodePoolLocks sync.Map
+
+func (r *kubernetesNodePoolResource) lockCluster(ctx context.Context, clusterID int32) (func(), error) {
+	key := struct {
+		client *pidginhost.APIClient
+		id     int32
+	}{r.client, clusterID}
+	v, _ := nodePoolLocks.LoadOrStore(key, make(chan struct{}, 1))
+	lock := v.(chan struct{})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case lock <- struct{}{}:
+		return func() { <-lock }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (r *kubernetesNodePoolResource) journals(ctx context.Context, clusterID int32) ([]pidginhost.PoolRemovalJournal, error) {
