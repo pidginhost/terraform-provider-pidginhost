@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 )
 
 func TestUpgradeServerV0KeepsServerAndNamesDroppedObjects(t *testing.T) {
@@ -77,6 +78,7 @@ type fakeServerAPI struct {
 	deleted   bool
 	released  []string
 	requests  []string
+	secrets   []string // password and user_data the API received
 }
 
 func newFakeServerAPI() *fakeServerAPI {
@@ -89,6 +91,9 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body["password"] != nil || body["user_data"] != nil {
+		f.secrets = append(f.secrets, fmt.Sprintf("%s password=%v user_data=%v", r.Method, body["password"], body["user_data"]))
+	}
 	reply := func(code int, v any) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
@@ -115,7 +120,7 @@ func (f *fakeServerAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"boot_iso": nil, "rescue_supported": true, "project": "", "billing": nil,
 			"networks": map[string]any{"public": public, "private": []any{}},
 		}
-		f.reads = 0
+		f.reads, f.deleted = 0, false
 		reply(http.StatusCreated, map[string]any{"id": 101})
 	case path == "/api/cloud/servers/101/" && r.Method == http.MethodGet:
 		if f.detail == nil || f.deleted {
@@ -337,6 +342,147 @@ resource "pidginhost_server" "test" {
 				Config: config("tf-acc-renamed"),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("pidginhost_server.test", tfjsonpath.New("project"), knownvalue.StringExact("tf-acc-renamed")),
+				},
+			},
+		},
+	})
+}
+
+// serverSecretsConfig is a server on the fake API with extra arguments.
+func serverSecretsConfig(url, extra string) string {
+	return fmt.Sprintf(`
+provider "pidginhost" {
+  token    = "test"
+  base_url = %q
+}
+resource "pidginhost_server" "test" {
+  hostname = "web1"
+  image    = "ubuntu-24"
+  package  = "cloudv-1"
+  new_ipv4 = true
+  %s
+}
+`, url, extra)
+}
+
+func (f *fakeServerAPI) sentSecrets() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return strings.Join(f.secrets, "\n")
+}
+
+func TestServerWriteOnlySecrets(t *testing.T) {
+	fake := newFakeServerAPI()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	fastKubernetesPoll(t)
+	const name = "pidginhost_server.test"
+	config := func(password string, version int, userDataVersion string) string {
+		return serverSecretsConfig(srv.URL, fmt.Sprintf(`
+  password_wo          = %q
+  password_wo_version  = %d
+  user_data_wo         = "#!/bin/sh\ntrue\n"
+  %s`, password, version, userDataVersion))
+	}
+	sent := func(want string) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			if got := fake.sentSecrets(); got != want {
+				return fmt.Errorf("the API received:\n%s\nwant:\n%s", got, want)
+			}
+			return nil
+		}
+	}
+	const created = "POST password=first user_data=#!/bin/sh\ntrue\n"
+	notSaved := []statecheck.StateCheck{
+		statecheck.ExpectKnownValue(name, tfjsonpath.New("password_wo"), knownvalue.Null()),
+		statecheck.ExpectKnownValue(name, tfjsonpath.New("user_data_wo"), knownvalue.Null()),
+	}
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_11_0)},
+		ProtoV6ProviderFactories: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:            config("first", 1, ""),
+				ConfigStateChecks: notSaved,
+				Check:             sent(created),
+			},
+			{
+				// A new value without a new version is not sent.
+				Config: config("ignored", 1, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(name, plancheck.ResourceActionNoop),
+				}},
+				Check: sent(created),
+			},
+			{
+				Config: config("second", 2, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(name, plancheck.ResourceActionUpdate),
+				}},
+				ConfigStateChecks: notSaved,
+				Check:             sent(created + "\nPATCH password=second user_data=<nil>"),
+			},
+			{
+				Config: config("second", 2, "user_data_wo_version = 1"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(name, plancheck.ResourceActionDestroyBeforeCreate),
+				}},
+				ConfigStateChecks: notSaved,
+				Check: sent(created + "\nPATCH password=second user_data=<nil>" +
+					"\nPOST password=second user_data=#!/bin/sh\ntrue\n"),
+			},
+			{
+				// Dropping the version keeps the server.
+				Config: config("second", 2, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(name, plancheck.ResourceActionUpdate),
+				}},
+			},
+		},
+	})
+}
+
+func TestServerMovesToWriteOnlySecretsInPlace(t *testing.T) {
+	fake := newFakeServerAPI()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	fastKubernetesPoll(t)
+	const name = "pidginhost_server.test"
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_11_0)},
+		ProtoV6ProviderFactories: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				// Refused before anything is created.
+				Config: serverSecretsConfig(srv.URL, `
+  password    = "first"
+  password_wo = "first"`),
+				ExpectError: regexp.MustCompile(`Invalid Attribute Combination`),
+			},
+			{
+				Config: serverSecretsConfig(srv.URL, `
+  password_wo_version = 1`),
+				ExpectError: regexp.MustCompile(`Invalid Attribute Combination`),
+			},
+			{Config: serverSecretsConfig(srv.URL, `
+  password  = "first"
+  user_data = "#!/bin/sh\ntrue\n"`)},
+			{
+				Config: serverSecretsConfig(srv.URL, `
+  password_wo  = "first"
+  user_data_wo = "#!/bin/sh\ntrue\n"`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(name, plancheck.ResourceActionUpdate),
+				}},
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(name, tfjsonpath.New("password"), knownvalue.Null()),
+					statecheck.ExpectKnownValue(name, tfjsonpath.New("user_data"), knownvalue.Null()),
+				},
+				Check: func(*terraform.State) error {
+					if got := fake.sentSecrets(); got != "POST password=first user_data=#!/bin/sh\ntrue\n" {
+						return fmt.Errorf("the API received:\n%s", got)
+					}
+					return nil
 				},
 			},
 		},

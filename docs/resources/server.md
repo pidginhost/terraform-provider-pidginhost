@@ -3,12 +3,12 @@
 page_title: "pidginhost_server Resource - pidginhost"
 subcategory: ""
 description: |-
-  A cloud server.
+  A cloud server. Errors from server creation and updates keep the API's explanation and redact submitted passwords and startup scripts.
 ---
 
 # pidginhost_server (Resource)
 
-A cloud server.
+A cloud server. Errors from server creation and updates keep the API's explanation and redact submitted passwords and startup scripts.
 
 ## Example Usage
 
@@ -18,12 +18,22 @@ resource "pidginhost_ssh_key" "admin" {
   key   = file("~/.ssh/id_ed25519.pub")
 }
 
+variable "password" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
 resource "pidginhost_server" "web" {
   hostname       = "web1"
   image          = "ubuntu24"
   package        = "cloudv-1"
   ssh_pub_key_id = pidginhost_ssh_key.admin.id
   new_ipv4       = true
+
+  # Never saved in the state. Raise the version to send a new password.
+  password_wo         = var.password
+  password_wo_version = 1
 
   fw_policy_in  = "DROP"
   fw_policy_out = "ACCEPT"
@@ -50,6 +60,8 @@ output "web_ipv4" {
 
 ### Optional
 
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
 - `destroy_protection` (Boolean) Refuse to delete the server while true. Set it to false and apply before destroying.
 - `destroy_public_ipv4` (Boolean) Release the server's IPv4 addresses when it is destroyed. When false they stay on the account, unattached and billed.
 - `destroy_public_ipv6` (Boolean) Release the server's IPv6 addresses when it is destroyed. When false they stay on the account, unattached and billed.
@@ -62,7 +74,9 @@ output "web_ipv4" {
 - `new_ipv4` (Boolean) Allocate a new IPv4 address and attach it before first boot. Changing it replaces the server.
 - `new_ipv6` (Boolean) Allocate a new IPv6 address and attach it before first boot. Changing it replaces the server.
 - `no_network_acknowledged` (Boolean) Confirm creating a server without a public address. Changing it replaces the server.
-- `password` (String, Sensitive) Password for the default user. Changing it resets the password through cloud-init. Unavailable on servers with a custom OS.
+- `password` (String, Sensitive) Password for the default user. Changing it resets the password through cloud-init. Unavailable on servers with a custom OS. Terraform keeps it in its state; password_wo does not.
+- `password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Password for the default user, never saved in the Terraform state. It is sent when the server is created and when password_wo_version changes. Needs Terraform 1.11 or later.
+- `password_wo_version` (Number) Change it to send the current password_wo to the server, which resets the password through cloud-init.
 - `private_address` (String) Address in private_network. The API assigns one when left empty. Changing it replaces the server.
 - `private_network` (String) Id or address (CIDR) of a private network to join at creation. Changing it replaces the server.
 - `project` (String) Project label.
@@ -71,7 +85,9 @@ output "web_ipv4" {
 - `ssh_pub_key` (String) Public key installed for SSH login. Changing it regenerates cloud-init and reboots a running server. An empty string removes it from future cloud-init data but does not revoke keys already in the guest.
 - `ssh_pub_key_id` (String) Id or fingerprint of an SSH key stored on the account, installed at creation. Changing it replaces the server.
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
-- `user_data` (String, Sensitive) Startup script run on first boot: an executable script with a shebang. The API stores it in cleartext. Changing it replaces the server.
+- `user_data` (String, Sensitive) Startup script run on first boot: an executable script with a shebang. The API stores it in cleartext. Changing it replaces the server, unless the same script moves to user_data_wo and is known during planning. Terraform keeps it in its state; user_data_wo does not.
+- `user_data_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Startup script run on first boot, never saved in the Terraform state. The API still stores it in cleartext. It is sent only when the server is created. Needs Terraform 1.11 or later.
+- `user_data_wo_version` (Number) Setting or changing it replaces the server, which then boots with the current user_data_wo.
 
 ### Read-Only
 

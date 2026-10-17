@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	pidginhost "github.com/pidginhost/sdk-go"
@@ -34,7 +35,8 @@ func (d *kubernetesKubeconfigDataSource) Metadata(_ context.Context, req datasou
 func (d *kubernetesKubeconfigDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "The current kubeconfig of a Kubernetes cluster. It holds cluster admin credentials, which " +
-			"Terraform keeps in its state.",
+			"Terraform keeps in its state. With Terraform 1.10 or later, use the pidginhost_kubernetes_kubeconfig " +
+			"ephemeral resource instead, which keeps them out of the state.",
 		Attributes: map[string]schema.Attribute{
 			"cluster_id": schema.StringAttribute{
 				Required:    true,
@@ -64,22 +66,32 @@ func (d *kubernetesKubeconfigDataSource) Read(ctx context.Context, req datasourc
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id := config.ClusterID.ValueString()
-	cluster, httpResp, err := d.client.KubernetesAPI.KubernetesClustersRetrieve(ctx, id).Execute()
-	if isNotFound(httpResp, err) {
-		resp.Diagnostics.AddError("Kubernetes cluster not found", fmt.Sprintf("Cluster %s does not exist.", id))
+	resp.Diagnostics.Append(fetchKubeconfig(ctx, d.client, &config)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err != nil {
-		resp.Diagnostics.Append(apiError("Reading Kubernetes cluster", err))
-		return
-	}
-	kubeconfig, httpResp, err := d.client.KubernetesAPI.KubernetesClustersKubeconfigRetrieve(ctx, id).Execute()
-	if err != nil {
-		resp.Diagnostics.Append(secretRouteError("Reading kubeconfig for cluster "+id, httpResp, err))
-		return
-	}
-	config.Kubeconfig = types.StringValue(kubeconfig)
-	config.ValidUntil = types.StringPointerValue(cluster.KubeconfigValidUntil.Get())
 	resp.Diagnostics.Append(resp.State.Set(ctx, config)...)
+}
+
+// fetchKubeconfig fills in the kubeconfig of cluster m.ClusterID and the time
+// it expires.
+func fetchKubeconfig(ctx context.Context, client *pidginhost.APIClient, m *kubernetesKubeconfigModel) (diags diag.Diagnostics) {
+	id := m.ClusterID.ValueString()
+	cluster, httpResp, err := client.KubernetesAPI.KubernetesClustersRetrieve(ctx, id).Execute()
+	if isNotFound(httpResp, err) {
+		diags.AddError("Kubernetes cluster not found", fmt.Sprintf("Cluster %s does not exist.", id))
+		return diags
+	}
+	if err != nil {
+		diags.Append(apiError("Reading Kubernetes cluster", err))
+		return diags
+	}
+	kubeconfig, httpResp, err := client.KubernetesAPI.KubernetesClustersKubeconfigRetrieve(ctx, id).Execute()
+	if err != nil {
+		diags.Append(secretRouteError("Reading kubeconfig for cluster "+id, httpResp, err))
+		return diags
+	}
+	m.Kubeconfig = types.StringValue(kubeconfig)
+	m.ValidUntil = types.StringPointerValue(cluster.KubeconfigValidUntil.Get())
+	return diags
 }

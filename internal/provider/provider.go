@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -14,7 +15,7 @@ import (
 	pidginhost "github.com/pidginhost/sdk-go"
 )
 
-var _ provider.Provider = &pidginhostProvider{}
+var _ provider.ProviderWithEphemeralResources = &pidginhostProvider{}
 
 // tokenEnvVars are read in order when the configuration has no token.
 var tokenEnvVars = []string{"PIDGINHOST_TOKEN", "PIDGINHOST_ACCESS_TOKEN", "PIDGINHOST_API_TOKEN"}
@@ -95,6 +96,7 @@ func (p *pidginhostProvider) Configure(ctx context.Context, req provider.Configu
 	client := newAPIClient(token, baseURL, userAgent)
 	resp.DataSourceData = client
 	resp.ResourceData = client
+	resp.EphemeralResourceData = client
 }
 
 func (p *pidginhostProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -134,6 +136,12 @@ func (p *pidginhostProvider) DataSources(_ context.Context) []func() datasource.
 		NewServerDataSource,
 		NewCatalogDataSource,
 		NewKubernetesKubeconfigDataSource,
+	}
+}
+
+func (p *pidginhostProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		NewKubernetesKubeconfigEphemeral, NewBucketCredentialsEphemeral,
 	}
 }
 

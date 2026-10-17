@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Kubeconfigs and bucket keys can configure other providers without being saved in the Terraform state.
+- Server passwords and startup scripts can be given as write-only values that never reach the Terraform state.
+- A guide to configuring the kubernetes and helm providers from a cluster's kubeconfig.
+
+### Changed
+
+- Server errors hide echoed passwords and startup scripts while preserving the API's explanation.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added

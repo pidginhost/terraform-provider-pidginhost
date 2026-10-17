@@ -49,7 +49,7 @@ func TestServerCreateSavesProtection(t *testing.T) {
 	m.DestroyProtection = types.BoolValue(true)
 	plan := serverTestPlan(t, m)
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema, Raw: tftypes.NewValue(plan.Raw.Type(), nil)}}
-	r.Create(t.Context(), resource.CreateRequest{Plan: plan}, &resp)
+	r.Create(t.Context(), resource.CreateRequest{Plan: plan, Config: tfsdk.Config(plan)}, &resp)
 	if resp.Diagnostics.HasError() {
 		t.Fatal(resp.Diagnostics)
 	}
@@ -77,7 +77,7 @@ func TestServerCreateKeepsIDWhenWaitFails(t *testing.T) {
 	r := &serverResource{client: newAPIClient("test", srv.URL, "test")}
 	plan := serverTestPlan(t, serverTestModel())
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema, Raw: tftypes.NewValue(plan.Raw.Type(), nil)}}
-	r.Create(t.Context(), resource.CreateRequest{Plan: plan}, &resp)
+	r.Create(t.Context(), resource.CreateRequest{Plan: plan, Config: tfsdk.Config(plan)}, &resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("expected wait error")
 	}
@@ -205,6 +205,11 @@ func TestServerV0UpgradeAndPlan(t *testing.T) {
 	var attrs map[string]tftypes.Value
 	if err := value.As(&attrs); err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range []string{"password_wo", "password_wo_version", "user_data_wo", "user_data_wo_version"} {
+		if !attrs[name].IsNull() {
+			t.Fatalf("upgraded %s must be null", name)
+		}
 	}
 	var id string
 	if err := attrs["id"].As(&id); err != nil || id != "101" {
