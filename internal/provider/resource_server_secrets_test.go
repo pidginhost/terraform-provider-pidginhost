@@ -115,20 +115,37 @@ resource "terraform_data" %q {
 }
 
 // The API's reason for refusing a request stays in the error, but an echo of
-// the submitted password or script does not.
+// the submitted password or script does not, even reformatted.
 func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
-	const script = "#!/bin/sh\ntoken=test-script-secret\n"
-	for _, operation := range []string{"create password", "create script", "update password"} {
-		t.Run(operation, func(t *testing.T) {
+	const script = "#!/bin/sh\r\ntoken=test-script-secret\r\n"
+	const password = `test-pass"word\secret`
+	for _, tc := range []struct {
+		operation string
+		echo      func(body map[string]any) (contentType, text string)
+	}{
+		{"create password", func(body map[string]any) (string, string) {
+			escaped, _ := json.Marshal(body["password"])
+			return "text/plain", "Unknown package. refused " + string(escaped)
+		}},
+		{"create script", func(body map[string]any) (string, string) {
+			// The API normalizes line endings and trims the script.
+			normalized := strings.TrimSpace(strings.ReplaceAll(body["user_data"].(string), "\r\n", "\n"))
+			out, _ := json.Marshal(map[string]any{"package": []string{"Unknown package."}, "detail": "refused " + normalized})
+			return "application/json", string(out)
+		}},
+		{"update password", func(body map[string]any) (string, string) {
+			out, _ := json.Marshal(map[string]any{"package": []string{"Unknown package."}, "detail": fmt.Sprint("refused ", body["password"])})
+			return "application/json", string(out)
+		}},
+	} {
+		t.Run(tc.operation, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&body)
-				w.Header().Set("Content-Type", "application/json")
+				contentType, text := tc.echo(body)
+				w.Header().Set("Content-Type", contentType)
 				w.WriteHeader(http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]any{
-					"package": []string{"Unknown package."},
-					"detail":  fmt.Sprintf("refused %v %v", body["password"], body["user_data"]),
-				})
+				_, _ = fmt.Fprint(w, text)
 			}))
 			defer srv.Close()
 			r := &serverResource{client: newAPIClient("test", srv.URL, "test")}
@@ -136,16 +153,16 @@ func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
 			model.ID = types.StringValue("101")
 			state := serverTestPlan(t, model)
 			configModel := model
-			if operation == "create script" {
+			if tc.operation == "create script" {
 				configModel.UserDataWO = types.StringValue(script)
 			} else {
-				configModel.PasswordWO = types.StringValue("test-password-secret")
+				configModel.PasswordWO = types.StringValue(password)
 				model.PasswordWOVersion = types.Int64Value(1)
 			}
 			plan := serverTestPlan(t, model)
 			config := tfsdk.Config(serverTestPlan(t, configModel))
 			var diags diag.Diagnostics
-			if operation == "update password" {
+			if tc.operation == "update password" {
 				resp := fwresource.UpdateResponse{State: tfsdk.State(state)}
 				r.Update(t.Context(), fwresource.UpdateRequest{Plan: plan, State: tfsdk.State(state), Config: config}, &resp)
 				diags = resp.Diagnostics
@@ -161,7 +178,7 @@ func TestServerSecretErrorsKeepTheReasonNotTheSecret(t *testing.T) {
 			for _, d := range diags {
 				text += d.Summary() + " " + d.Detail()
 			}
-			if strings.Contains(text, "test-password-secret") || strings.Contains(text, "test-script-secret") {
+			if strings.Contains(text, "secret") {
 				t.Fatalf("the error repeats the submitted secret: %q", text)
 			}
 			if !strings.Contains(text, "Unknown package.") {

@@ -145,12 +145,25 @@ func secretRouteError(summary string, resp *http.Response, err error) diag.Diagn
 }
 
 // redactedAPIError is apiError for a request that carried secrets. The API's
-// reason stays; any echo of a submitted secret is cut out.
+// reason stays; an echo of a submitted secret is cut out, whole, JSON-escaped
+// or as any of its lines, which also covers an echo with normalized line ends.
+// Lines under 8 characters are left alone so short lines like "fi" do not
+// blank out the message.
 func redactedAPIError(summary string, err error, secrets ...*string) diag.Diagnostic {
 	detail := describeError(err)
 	for _, secret := range secrets {
-		if secret != nil && *secret != "" {
-			detail = strings.ReplaceAll(detail, *secret, "(redacted)")
+		if secret == nil || *secret == "" {
+			continue
+		}
+		escaped, _ := json.Marshal(*secret)
+		forms := []string{*secret, strings.Trim(string(escaped), `"`)}
+		for _, line := range strings.Split(*secret, "\n") {
+			if line = strings.TrimSpace(line); len(line) >= 8 {
+				forms = append(forms, line)
+			}
+		}
+		for _, form := range forms {
+			detail = strings.ReplaceAll(detail, form, "(redacted)")
 		}
 	}
 	return diag.NewErrorDiagnostic(summary, detail)
