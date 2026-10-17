@@ -40,7 +40,8 @@ func (r *dnsZoneResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 		Description: "FreeDNS hosting for a domain: the zone pidginhost_dns_record adds records to. Activating the " +
 			"zone of an internal domain points the domain's name servers at PidginHost. Destroying the resource " +
 			"deactivates FreeDNS: the zone is deleted with all its records and an internal domain gets back the name " +
-			"servers it had before. Do not manage the name servers of the same domain with " +
+			"servers it had before. Destroying an already inactive zone also succeeds. " +
+			"Do not manage the name servers of the same domain with " +
 			"pidginhost_domain_nameservers.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -124,6 +125,12 @@ func (r *dnsZoneResource) Delete(ctx context.Context, req resource.DeleteRequest
 	body := pidginhost.NewDeactivateFreeDNSRequest(domain, pidginhost.SourceEnum(state.Source.ValueString()))
 	_, httpResp, err := r.client.FreednsAPI.FreednsDnsDeactivateCreate(ctx).DeactivateFreeDNSRequest(*body).Execute()
 	if err != nil && !isNotFound(httpResp, err) {
+		// Inactive and removed domains return 400 from deactivation. Only
+		// discard state when a separate successful listing confirms absence.
+		zones, _, listErr := r.client.FreednsAPI.FreednsDnsList(ctx).Execute()
+		if listErr == nil && findDNSZone(zones, domain, state.Source.ValueString()) == nil {
+			return
+		}
 		resp.Diagnostics.Append(apiError("Deactivating FreeDNS for "+domain, err))
 	}
 }

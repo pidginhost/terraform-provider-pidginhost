@@ -100,6 +100,7 @@ func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			"changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, " +
 			"SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host " +
 			"names in cname, exchange and target are compared without case and trailing dot. " +
+			"The root target (.) is preserved on import. TTL changes are checked against the stored record. " +
 			"Destroying a record also succeeds if its zone has already been deactivated.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -256,9 +257,25 @@ func (r *dnsRecordResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 	body := plan.request()
 	body.Line = &record.Line
-	if _, _, err := r.client.FreednsAPI.FreednsDnsAddRecordCreate(ctx).Domain(state.zone()).Source(state.Source.ValueString()).
-		DNSRecordCreateRequest(body).Execute(); err != nil {
+	_, httpResp, err := r.client.FreednsAPI.FreednsDnsAddRecordCreate(ctx).Domain(state.zone()).Source(state.Source.ValueString()).
+		DNSRecordCreateRequest(body).Execute()
+	if err != nil && (httpResp == nil || httpResp.StatusCode < 200 || httpResp.StatusCode >= 300) {
 		resp.Diagnostics.Append(apiError("Updating DNS record", err))
+		return
+	}
+	// An accepted edit echoes the zone backend payload with string-valued
+	// numbers, which the SDK's typed response cannot decode. Read the actual
+	// record after every accepted write and require the requested TTL before
+	// saving state, regardless of whether the response body decoded.
+	records, _, err = r.list(ctx, &plan)
+	if err != nil {
+		resp.Diagnostics.Append(apiError("Verifying DNS record update", err))
+		return
+	}
+	record = plan.find(records)
+	if record == nil || int64(record.Ttl) != plan.TTL.ValueInt64() {
+		resp.Diagnostics.AddError("DNS record update not confirmed",
+			"The API accepted the edit but did not return the record with the requested TTL. Refresh and apply again.")
 		return
 	}
 	plan.ID = plan.id()
@@ -369,6 +386,11 @@ func dnsRecordName(name, zone string) string {
 func normalizeDNSValue(field, value string) string {
 	switch field {
 	case "cname", "exchange", "target":
+		// The root denotes a null MX or an unavailable SRV service. It must
+		// survive import and remain distinct from an empty value.
+		if value == "." {
+			return value
+		}
 		return strings.ToLower(strings.TrimRight(value, "."))
 	case "address":
 		if addr, err := netip.ParseAddr(value); err == nil {

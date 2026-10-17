@@ -3,12 +3,12 @@
 page_title: "pidginhost_dns_zone Resource - pidginhost"
 subcategory: ""
 description: |-
-  FreeDNS hosting for a domain: the zone pidginhost_dns_record adds records to. Activating the zone of an internal domain points the domain's name servers at PidginHost. Destroying the resource deactivates FreeDNS: the zone is deleted with all its records and an internal domain gets back the name servers it had before. Do not manage the name servers of the same domain with pidginhost_domain_nameservers.
+  FreeDNS hosting for a domain: the zone pidginhost_dns_record adds records to. Activating the zone of an internal domain points the domain's name servers at PidginHost. Destroying the resource deactivates FreeDNS: the zone is deleted with all its records and an internal domain gets back the name servers it had before. Destroying an already inactive zone also succeeds. Do not manage the name servers of the same domain with pidginhost_domain_nameservers.
 ---
 
 # pidginhost_dns_zone (Resource)
 
-FreeDNS hosting for a domain: the zone pidginhost_dns_record adds records to. Activating the zone of an internal domain points the domain's name servers at PidginHost. Destroying the resource deactivates FreeDNS: the zone is deleted with all its records and an internal domain gets back the name servers it had before. Do not manage the name servers of the same domain with pidginhost_domain_nameservers.
+FreeDNS hosting for a domain: the zone pidginhost_dns_record adds records to. Activating the zone of an internal domain points the domain's name servers at PidginHost. Destroying the resource deactivates FreeDNS: the zone is deleted with all its records and an internal domain gets back the name servers it had before. Destroying an already inactive zone also succeeds. Do not manage the name servers of the same domain with pidginhost_domain_nameservers.
 
 ## Example Usage
 

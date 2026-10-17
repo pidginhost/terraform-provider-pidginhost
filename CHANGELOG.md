@@ -22,6 +22,9 @@
 
 ### Fixed
 
+- DNS lifetime changes no longer report errors after a successful edit.
+- Imported mail and service records keep their root targets when their DNS lifetimes change.
+- Already inactive DNS zones can be destroyed without an error.
 - Concurrent worker changes wait for each other, and removals report failures before an apply finishes.
 - Failed worker and volume creation preserves deletion settings for cleanup.
 - DNS records can be destroyed after their zone is deactivated.

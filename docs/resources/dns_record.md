@@ -3,12 +3,12 @@
 page_title: "pidginhost_dns_record Resource - pidginhost"
 subcategory: ""
 description: |-
-  A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. Destroying a record also succeeds if its zone has already been deactivated.
+  A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. The root target (.) is preserved on import. TTL changes are checked against the stored record. Destroying a record also succeeds if its zone has already been deactivated.
 ---
 
 # pidginhost_dns_record (Resource)
 
-A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. Destroying a record also succeeds if its zone has already been deactivated.
+A record in a FreeDNS zone; see pidginhost_dns_zone. The API gives records no id: a record is its name, type and the values its type uses, and changing any of them replaces the record. ttl changes in place. A and AAAA records use address, CNAME uses cname, MX uses preference and exchange, SRV uses priority, weight, port and target, TXT uses txtdata and CAA uses flag, tag and value. Host names in cname, exchange and target are compared without case and trailing dot. The root target (.) is preserved on import. TTL changes are checked against the stored record. Destroying a record also succeeds if its zone has already been deactivated.
 
 ## Example Usage
 
